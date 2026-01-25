@@ -18,6 +18,19 @@ async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
     print("🚀 Starting Health-bridge AI...")
+    
+    # Initialize Firebase
+    try:
+        import firebase_admin
+        from firebase_admin import credentials
+        
+        if not firebase_admin._apps:
+            cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
+            firebase_admin.initialize_app(cred)
+            print("✅ Firebase Admin initialized")
+    except Exception as e:
+        print(f"⚠️ Firebase initialization failed: {e}")
+
     await init_db()
     print("✅ Database connected")
     yield
