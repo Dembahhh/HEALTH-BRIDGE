@@ -4,8 +4,13 @@ import sys
 # Add backend to path
 sys.path.append(os.getcwd())
 
-# Set your Gemini API key (get it from https://aistudio.google.com/app/apikey)
-os.environ["GEMINI_API_KEY"] = "YOUR_GEMINI_API_KEY_HERE"
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
+# Verify Gemini API key is set (get it from https://aistudio.google.com/app/apikey)
+if not os.getenv("GEMINI_API_KEY"):
+    raise ValueError("GEMINI_API_KEY not set. Add it to your .env file or set as environment variable.")
 
 from app.services.chat import ChatService
 

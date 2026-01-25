@@ -136,11 +136,12 @@ class VectorRetriever:
         formatted = []
         if results["documents"] and results["documents"][0]:
             for i, doc in enumerate(results["documents"][0]):
+                distance = results["distances"][0][i] if results["distances"] else 0
                 result = {
                     "content": doc,
                     "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
-                    "distance": results["distances"][0][i] if results["distances"] else 0,
-                    "relevance_score": 1 - (results["distances"][0][i] if results["distances"] else 0),
+                    "distance": distance,
+                    "relevance_score": max(0.0, 1.0 - distance),  # Clamp to non-negative
                 }
                 formatted.append(result)
         

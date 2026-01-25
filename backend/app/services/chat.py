@@ -1,6 +1,6 @@
 from crewai import Crew, Task, Process
 from app.agents.agents import HealthBridgeAgents
-from app.agents.models import Profile, RiskAssessment, Constraints, HabitPlan, SafetyReview
+# from app.agents.models import Profile, RiskAssessment, Constraints, HabitPlan, SafetyReview  # TODO: Use with output_pydantic
 from typing import Dict, Any
 
 class ChatService:

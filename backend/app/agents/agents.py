@@ -1,13 +1,16 @@
+import os
 from crewai import Agent, LLM
-from .models import Profile, RiskAssessment, Constraints, HabitPlan, SafetyReview
+# from .models import Profile, RiskAssessment, Constraints, HabitPlan, SafetyReview  # TODO: Use with output_pydantic
 from .tools import retrieve_guidelines, recall_memory, save_constraint
 
 class HealthBridgeAgents:
     def __init__(self):
-        # Configure Gemini LLM for all agents
+        # Configure LLM from environment (default: Gemini Flash)
+        model = os.getenv("LLM_MODEL", "gemini/gemini-1.5-flash")
+        temperature = float(os.getenv("LLM_TEMPERATURE", "0.7"))
         self.llm = LLM(
-            model="gemini/gemini-1.5-flash",
-            temperature=0.7
+            model=model,
+            temperature=temperature
         )
     def intake_agent(self):
         return Agent(

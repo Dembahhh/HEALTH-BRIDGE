@@ -2,6 +2,7 @@ import chromadb
 from chromadb.config import Settings
 from chromadb.utils import embedding_functions
 from typing import List, Dict, Optional
+from datetime import datetime
 import os
 
 # Use a persistent path for ChromaDB
@@ -15,7 +16,7 @@ class SemanticMemory:
         
         # Wrapper to make our EmbeddingClient compatible with Chroma
         class ChromaEmbeddingWrapper(embedding_functions.EmbeddingFunction):
-            def __call__(self, input: list[str]) -> list[list[float]]:
+            def __call__(self, input: List[str]) -> List[List[float]]:
                 client = get_embedding_client()
                 return client.embed_batch(input)
 
@@ -33,7 +34,7 @@ class SemanticMemory:
         
         # Enforce user_id in metadata
         metadata["user_id"] = user_id
-        metadata["timestamp"] = metadata.get("timestamp", "") 
+        metadata["timestamp"] = metadata.get("timestamp", datetime.now().isoformat()) 
         
         self.collection.add(
             documents=[text],

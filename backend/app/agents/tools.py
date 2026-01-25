@@ -61,11 +61,14 @@ def recall_memory(user_id: str, query: str) -> str:
         user_id: ID of the user
         query: What to search for
     """
-    memory = get_memory()
-    results = memory.recall_memories(user_id, query)
-    if not results:
-        return "No specific memories found."
-    return "\n".join([f"- {m['text']}" for m in results])
+    try:
+        memory = get_memory()
+        results = memory.recall_memories(user_id, query)
+        if not results:
+            return "No specific memories found."
+        return "\n".join([f"- {m.get('text', 'N/A')}" for m in results])
+    except Exception as e:
+        return f"Memory recall error: {e}"
 
 
 @tool("Save User Constraint")
@@ -76,6 +79,9 @@ def save_constraint(user_id: str, constraint: str) -> str:
         user_id: ID of the user
         constraint: The constraint to save
     """
-    memory = get_memory()
-    memory.store_memory(user_id, constraint, metadata={"type": "constraint"})
-    return "Constraint saved."
+    try:
+        memory = get_memory()
+        memory.store_memory(user_id, constraint, metadata={"type": "constraint"})
+        return "Constraint saved."
+    except Exception as e:
+        return f"Failed to save constraint: {e}"
