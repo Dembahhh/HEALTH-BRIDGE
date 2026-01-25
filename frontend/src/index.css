@@ -1,20 +1,238 @@
 @import "tailwindcss";
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+/* SF Pro Display - Using Inter as web-safe alternative with similar characteristics */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+/* ========================================
+   HEALTHBRIDGE DESIGN SYSTEM
+   ======================================== */
 
 @theme {
-    --font-sans: 'Inter', system-ui, sans-serif;
-    --color-primary: #2563eb;
-    --color-primary-hover: #1d4ed8;
-    --color-gradient-start: #3b82f6;
-    --color-gradient-end: #8b5cf6;
+    /* Typography */
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+
+    /* Primary Colors */
+    --color-primary: #F18F2E;
+    --color-primary-hover: #E07A1A;
+    --color-primary-light: #F9A94D;
+
+    /* Accent Colors */
+    --color-accent: #E74627;
+    --color-accent-hover: #D03A1D;
+    --color-accent-dark: #7D2817;
+
+    /* Dark Theme Colors */
+    --color-dark: #080807;
+    --color-dark-surface: #1D1D1C;
+    --color-dark-elevated: #2A2A29;
+    --color-dark-border: #3A3A39;
+
+    /* Light Theme Colors */
+    --color-light: #FFFFFF;
+    --color-light-surface: #F8F8F7;
+    --color-light-elevated: #EFEFEE;
+    --color-light-border: #E5E5E4;
+
+    /* Text Colors */
+    --color-text-dark: #080807;
+    --color-text-light: #FFFFFF;
+    --color-text-muted: #8A8A89;
 }
+
+/* ========================================
+   BASE STYLES
+   ======================================== */
 
 body {
     font-family: var(--font-sans);
-    @apply bg-gray-50 text-gray-900 transition-colors duration-200;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Light Mode (default) */
+:root {
+    --bg-primary: var(--color-light);
+    --bg-surface: var(--color-light-surface);
+    --bg-elevated: var(--color-light-elevated);
+    --border-color: var(--color-light-border);
+    --text-primary: var(--color-text-dark);
+    --text-secondary: #6B6B6A;
+    --text-muted: #8A8A89;
+}
+
+:root body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Dark Mode */
+:root.dark {
+    --bg-primary: var(--color-dark);
+    --bg-surface: var(--color-dark-surface);
+    --bg-elevated: var(--color-dark-elevated);
+    --border-color: var(--color-dark-border);
+    --text-primary: var(--color-text-light);
+    --text-secondary: #B5B5B4;
+    --text-muted: #8A8A89;
 }
 
 :root.dark body {
-    @apply bg-gray-900 text-gray-100;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+/* ========================================
+   COMPONENT STYLES
+   ======================================== */
+
+/* Buttons */
+.btn-primary {
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
+    color: white;
+    font-weight: 600;
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.75rem;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 14px 0 rgba(241, 143, 46, 0.25);
+}
+
+.btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px 0 rgba(241, 143, 46, 0.35);
+}
+
+.btn-secondary {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    font-weight: 500;
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.75rem;
+    border: 1px solid var(--border-color);
+    transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+    background: var(--bg-surface);
+    border-color: var(--color-primary);
+}
+
+/* Cards */
+.card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 1rem;
+    transition: all 0.2s ease;
+}
+
+.card-elevated {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: 1rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+:root.dark .card-elevated {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+}
+
+/* Inputs */
+.input {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 0.75rem;
+    padding: 0.875rem 1rem;
+    color: var(--text-primary);
+    transition: all 0.2s ease;
+}
+
+.input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(241, 143, 46, 0.15);
+}
+
+.input::placeholder {
+    color: var(--text-muted);
+}
+
+/* Glass Effect */
+.glass {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+:root.dark .glass {
+    background: rgba(29, 29, 28, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* ========================================
+   UTILITY CLASSES
+   ======================================== */
+
+.text-gradient {
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.bg-gradient-brand {
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%);
+}
+
+.bg-gradient-dark {
+    background: linear-gradient(180deg, var(--color-dark) 0%, var(--color-dark-surface) 100%);
+}
+
+.border-gradient {
+    border: 1px solid transparent;
+    background: linear-gradient(var(--bg-surface), var(--bg-surface)) padding-box,
+        linear-gradient(135deg, var(--color-primary), var(--color-accent)) border-box;
+}
+
+/* Glow Effects */
+.glow-primary {
+    box-shadow: 0 0 30px rgba(241, 143, 46, 0.3);
+}
+
+.glow-accent {
+    box-shadow: 0 0 30px rgba(231, 70, 39, 0.3);
+}
+
+/* Animation */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fadeIn {
+    animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes pulse-glow {
+
+    0%,
+    100% {
+        box-shadow: 0 0 20px rgba(241, 143, 46, 0.2);
+    }
+
+    50% {
+        box-shadow: 0 0 40px rgba(241, 143, 46, 0.4);
+    }
+}
+
+.animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
 }
