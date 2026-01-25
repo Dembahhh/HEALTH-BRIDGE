@@ -80,18 +80,30 @@ async def send_message(
     """
     Send a message and get AI response.
 
-    This triggers the multi-agent pipeline (Phase 6).
+    This triggers the multi-agent pipeline.
     """
-    # TODO: Implement agent orchestration (Phase 6)
-
-    return SendMessageResponse(
-        message_id=str(uuid4()),
-        content="Hello! I'm Health-bridge AI, your preventive health coach. "
-                "I can help you understand your risk for hypertension and diabetes, "
-                "and create a personalized 4-week habit plan. Would you like to start "
-                "with a quick health assessment?",
-        agent_name="supervisor",
-    )
+    from app.services.chat import ChatService
+    
+    # Initialize service (in prod, this should be a dependency or singleton)
+    chat_service = ChatService()
+    
+    try:
+        # We assume the user ID comes from the auth token
+        user_id = current_user.get("uid")
+        
+        # Execute the agent crew
+        result = chat_service.run_intake_session(request.content, user_id)
+        
+        # Result from CrewAI is typically a string or an object with 'raw'
+        response_content = str(result)
+        
+        return SendMessageResponse(
+            message_id=str(uuid4()),
+            content=response_content,
+            agent_name="HealthBridge Crew"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/session/{session_id}/messages")

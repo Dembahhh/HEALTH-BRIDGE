@@ -1,6 +1,39 @@
-/.claude
-/AGENTS.md
-/Health-bridge
-/Health-bridge AI f98c87f465064292bb819817cad1ff63.md
-/Health-bridge-ref
+# System
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+Thumbs.db
+.ipynb_checkpoints/
+
+# Virtual Environment
+venv/
+env/
+.env
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+.claude/
+.qodo/
+
+# Project Specific - Reference/Large Files
+/Health-bridge/
+/Health-bridge-ref/
 /Health-bridge.zip
+/Health-bridge AI f98c87f465064292bb819817cad1ff63.md
+/AGENTS.md
+
+# Application Data
+*.log
+backend/data/
+backend/chroma_db/
+backend/firebase-credentials.json
+backend/__pycache__/
+
+# Temporary
+.tmp/
+tmp/
