@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { updateProfile } from '../features/profile/profileSlice';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import ThemeToggle from '../components/ThemeToggle';
+import { Sparkles, ChevronRight, ChevronLeft, Check } from 'lucide-react';
 
 const steps = [
     {
@@ -35,6 +37,7 @@ export default function OnboardingPage() {
     const dispatch = useDispatch();
     const navigate = useNavigate();
     const { loading } = useSelector((state) => state.profile);
+    const { user } = useSelector((state) => state.auth);
 
     const [currentStep, setCurrentStep] = useState(0);
     const [formData, setFormData] = useState({
@@ -69,10 +72,7 @@ export default function OnboardingPage() {
         }
     };
 
-    const { user } = useSelector((state) => state.auth);
-
     const handleSkip = () => {
-        // Mark as skipped in local storage so we don't show it again automatically
         if (user?.uid) {
             localStorage.setItem(`onboarding_skipped_${user.uid}`, 'true');
         }
@@ -88,32 +88,40 @@ export default function OnboardingPage() {
         }
     };
 
+    const selectStyle = {
+        background: 'var(--bg-elevated)',
+        border: '1px solid var(--border-color)',
+        color: 'var(--text-primary)'
+    };
+
     const renderStepContent = () => {
         switch (steps[currentStep].id) {
             case 'intro':
                 return (
-                    <div className="text-center py-8">
-                        <div className="mx-auto flex items-center justify-center h-24 w-24 rounded-full bg-blue-100 mb-6">
-                            <svg className="h-12 w-12 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
+                    <div className="text-center py-8 animate-fadeIn">
+                        <div className="mx-auto flex items-center justify-center h-24 w-24 rounded-3xl mb-6 animate-pulse-glow"
+                            style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%)' }}>
+                            <Sparkles className="h-12 w-12 text-white" />
                         </div>
-                        <p className="text-gray-600 mb-8 max-w-sm mx-auto">
+                        <p className="mb-8 max-w-sm mx-auto" style={{ color: 'var(--text-secondary)' }}>
                             We'll ask you a few simple questions to tailor your AI health coach. You can skip this and fill it out later from your dashboard.
                         </p>
                     </div>
                 );
             case 'demographics':
                 return (
-                    <div className="space-y-6 py-4">
+                    <div className="space-y-6 py-4 animate-fadeIn">
                         <div>
-                            <label htmlFor="age_band" className="block text-sm font-medium text-gray-700 mb-2">Age Group</label>
+                            <label htmlFor="age_band" className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+                                Age Group
+                            </label>
                             <select
                                 id="age_band"
                                 name="age_band"
                                 value={formData.age_band}
                                 onChange={handleChange}
-                                className="block w-full py-3 px-4 border border-gray-300 bg-white rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                className="input w-full"
+                                style={selectStyle}
                             >
                                 <option value="18-29">18-29</option>
                                 <option value="30-39">30-39</option>
@@ -123,13 +131,16 @@ export default function OnboardingPage() {
                             </select>
                         </div>
                         <div>
-                            <label htmlFor="sex" className="block text-sm font-medium text-gray-700 mb-2">Sex</label>
+                            <label htmlFor="sex" className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+                                Sex
+                            </label>
                             <select
                                 id="sex"
                                 name="sex"
                                 value={formData.sex}
                                 onChange={handleChange}
-                                className="block w-full py-3 px-4 border border-gray-300 bg-white rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                className="input w-full"
+                                style={selectStyle}
                             >
                                 <option value="male">Male</option>
                                 <option value="female">Female</option>
@@ -139,43 +150,54 @@ export default function OnboardingPage() {
                 );
             case 'history':
                 return (
-                    <div className="space-y-6 py-4">
-                        <p className="text-gray-600 mb-4">Select any that apply to your immediate family (parents, siblings):</p>
-                        <div className="space-y-4">
-                            <label className="flex items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
+                    <div className="space-y-4 py-4 animate-fadeIn">
+                        <p className="mb-4" style={{ color: 'var(--text-secondary)' }}>
+                            Select any that apply to your immediate family:
+                        </p>
+                        {[
+                            { name: 'family_history_hypertension', label: 'Hypertension (High Blood Pressure)', checked: formData.family_history_hypertension },
+                            { name: 'family_history_diabetes', label: 'Diabetes (Type 1 or 2)', checked: formData.family_history_diabetes },
+                        ].map((item) => (
+                            <label
+                                key={item.name}
+                                className="flex items-center p-4 rounded-xl cursor-pointer transition-all"
+                                style={{
+                                    background: item.checked ? 'rgba(241, 143, 46, 0.1)' : 'var(--bg-elevated)',
+                                    border: item.checked ? '2px solid var(--color-primary)' : '1px solid var(--border-color)'
+                                }}>
                                 <input
                                     type="checkbox"
-                                    name="family_history_hypertension"
-                                    checked={formData.family_history_hypertension}
+                                    name={item.name}
+                                    checked={item.checked}
                                     onChange={handleChange}
-                                    className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                    className="sr-only"
                                 />
-                                <span className="ml-3 text-gray-900 font-medium">Hypertension (High Blood Pressure)</span>
+                                <div className="w-6 h-6 rounded-lg mr-4 flex items-center justify-center transition-all"
+                                    style={{
+                                        background: item.checked ? 'var(--color-primary)' : 'var(--bg-surface)',
+                                        border: item.checked ? 'none' : '2px solid var(--border-color)'
+                                    }}>
+                                    {item.checked && <Check className="w-4 h-4 text-white" />}
+                                </div>
+                                <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{item.label}</span>
                             </label>
-                            <label className="flex items-center p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
-                                <input
-                                    type="checkbox"
-                                    name="family_history_diabetes"
-                                    checked={formData.family_history_diabetes}
-                                    onChange={handleChange}
-                                    className="h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                                />
-                                <span className="ml-3 text-gray-900 font-medium">Diabetes (Type 1 or 2)</span>
-                            </label>
-                        </div>
+                        ))}
                     </div>
                 );
             case 'lifestyle':
                 return (
-                    <div className="space-y-6 py-4">
+                    <div className="space-y-6 py-4 animate-fadeIn">
                         <div>
-                            <label htmlFor="smoking_status" className="block text-sm font-medium text-gray-700 mb-2">Smoking Status</label>
+                            <label htmlFor="smoking_status" className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+                                Smoking Status
+                            </label>
                             <select
                                 id="smoking_status"
                                 name="smoking_status"
                                 value={formData.smoking_status}
                                 onChange={handleChange}
-                                className="block w-full py-3 px-4 border border-gray-300 bg-white rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                className="input w-full"
+                                style={selectStyle}
                             >
                                 <option value="never">Never Smoked</option>
                                 <option value="former">Former Smoker</option>
@@ -183,13 +205,16 @@ export default function OnboardingPage() {
                             </select>
                         </div>
                         <div>
-                            <label htmlFor="alcohol_consumption" className="block text-sm font-medium text-gray-700 mb-2">Alcohol Consumption</label>
+                            <label htmlFor="alcohol_consumption" className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+                                Alcohol Consumption
+                            </label>
                             <select
                                 id="alcohol_consumption"
                                 name="alcohol_consumption"
                                 value={formData.alcohol_consumption}
                                 onChange={handleChange}
-                                className="block w-full py-3 px-4 border border-gray-300 bg-white rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                className="input w-full"
+                                style={selectStyle}
                             >
                                 <option value="none">None</option>
                                 <option value="occasional">Occasional</option>
@@ -200,16 +225,21 @@ export default function OnboardingPage() {
                 );
             case 'activity':
                 return (
-                    <div className="space-y-6 py-4">
+                    <div className="space-y-6 py-4 animate-fadeIn">
                         <div>
-                            <label htmlFor="activity_level" className="block text-sm font-medium text-gray-700 mb-2">Activity Level</label>
-                            <p className="text-xs text-gray-500 mb-2">How much physical activity do you get?</p>
+                            <label htmlFor="activity_level" className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+                                Activity Level
+                            </label>
+                            <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+                                How much physical activity do you get?
+                            </p>
                             <select
                                 id="activity_level"
                                 name="activity_level"
                                 value={formData.activity_level}
                                 onChange={handleChange}
-                                className="block w-full py-3 px-4 border border-gray-300 bg-white rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                className="input w-full"
+                                style={selectStyle}
                             >
                                 <option value="sedentary">Sedentary (Little to no exercise)</option>
                                 <option value="light">Light (1-3 days/week)</option>
@@ -225,72 +255,109 @@ export default function OnboardingPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-            <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-xl">
-                <div className="bg-white py-8 px-4 shadow-xl sm:rounded-xl sm:px-10 border border-gray-100">
+        <div className="min-h-screen flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden"
+            style={{ background: 'var(--bg-primary)' }}>
 
-                    {/* Header */}
+            {/* Background Gradient Orbs */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                <div className="absolute top-20 right-20 w-64 h-64 rounded-full opacity-20"
+                    style={{ background: 'radial-gradient(circle, var(--color-primary) 0%, transparent 70%)' }} />
+                <div className="absolute bottom-20 left-20 w-80 h-80 rounded-full opacity-15"
+                    style={{ background: 'radial-gradient(circle, var(--color-accent) 0%, transparent 70%)' }} />
+            </div>
+
+            {/* Header */}
+            <div className="absolute top-6 left-6 right-6 flex justify-between items-center">
+                <Link to="/" className="flex items-center gap-2">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+                        style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%)' }}>
+                        <span className="text-white font-bold text-lg">H</span>
+                    </div>
+                    <span className="font-bold text-xl hidden sm:block" style={{ color: 'var(--text-primary)' }}>HealthBridge</span>
+                </Link>
+                <ThemeToggle />
+            </div>
+
+            <div className="sm:mx-auto sm:w-full sm:max-w-xl relative z-10">
+                {/* Card */}
+                <div className="rounded-2xl py-8 px-6 sm:px-10 shadow-2xl"
+                    style={{
+                        background: 'var(--bg-surface)',
+                        border: '1px solid var(--border-color)'
+                    }}>
+
+                    {/* Progress Bar */}
                     <div className="mb-8">
                         <div className="flex justify-between items-center mb-4">
-                            {/* Progress Dots */}
-                            <div className="flex space-x-2">
+                            <div className="flex gap-2">
                                 {steps.map((_, idx) => (
                                     <div
                                         key={idx}
-                                        className={`h-2 w-2 rounded-full transition-colors duration-300 ${idx === currentStep ? 'bg-blue-600 w-4' : (idx < currentStep ? 'bg-blue-400' : 'bg-gray-200')}`}
+                                        className="h-2 rounded-full transition-all duration-300"
+                                        style={{
+                                            width: idx === currentStep ? '2rem' : '0.5rem',
+                                            background: idx <= currentStep ? 'var(--color-primary)' : 'var(--border-color)'
+                                        }}
                                     />
                                 ))}
                             </div>
 
-                            <button onClick={handleSkip} className="text-sm text-gray-400 hover:text-gray-600">
+                            <button
+                                onClick={handleSkip}
+                                className="text-sm font-medium transition-colors"
+                                style={{ color: 'var(--text-muted)' }}>
                                 Skip
                             </button>
                         </div>
 
-                        <h2 className="text-2xl font-bold text-gray-900 transition-all duration-300 ease-in-out">
+                        <h2 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
                             {steps[currentStep].title}
                         </h2>
-                        <p className="mt-1 text-sm text-gray-500">
+                        <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
                             {steps[currentStep].description}
                         </p>
                     </div>
 
                     {/* Content */}
-                    <div className="min-h-[200px] transition-all duration-300 ease-in-out">
+                    <div className="min-h-[200px]">
                         {renderStepContent()}
                     </div>
 
                     {/* Footer */}
-                    <div className="mt-8 flex justify-between pt-6 border-t border-gray-100">
+                    <div className="mt-8 flex justify-between pt-6" style={{ borderTop: '1px solid var(--border-color)' }}>
                         <button
                             onClick={handleBack}
                             disabled={currentStep === 0}
-                            className={`px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${currentStep === 0 ? 'opacity-0 cursor-default' : ''}`}
+                            className={`btn-secondary flex items-center gap-2 ${currentStep === 0 ? 'opacity-0 pointer-events-none' : ''}`}
                         >
+                            <ChevronLeft className="w-4 h-4" />
                             Back
                         </button>
 
                         <button
                             onClick={handleNext}
                             disabled={loading}
-                            className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all"
+                            className="btn-primary flex items-center gap-2"
                         >
                             {loading ? (
-                                <span>Saving...</span>
+                                <span className="flex items-center gap-2">
+                                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                    </svg>
+                                    Saving...
+                                </span>
                             ) : (
-                                <span>{currentStep === steps.length - 1 ? 'Finish' : 'Next'}</span>
-                            )}
-                            {currentStep !== steps.length - 1 && !loading && (
-                                <svg className="ml-2 -mr-1 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                </svg>
+                                <>
+                                    {currentStep === steps.length - 1 ? 'Finish' : 'Next'}
+                                    {currentStep !== steps.length - 1 && <ChevronRight className="w-4 h-4" />}
+                                </>
                             )}
                         </button>
                     </div>
-
                 </div>
 
-                <p className="text-center text-xs text-gray-400 mt-6">
+                <p className="text-center text-xs mt-6" style={{ color: 'var(--text-muted)' }}>
                     HealthBridge AI • Step {currentStep + 1} of {steps.length}
                 </p>
             </div>

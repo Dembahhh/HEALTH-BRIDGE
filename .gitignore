@@ -4,3 +4,67 @@
 /Health-bridge AI f98c87f465064292bb819817cad1ff63.md
 /Health-bridge-ref
 /Health-bridge.zip
+
+# ========================================
+# SECRETS - NEVER COMMIT THESE
+# ========================================
+*.env
+.env
+.env.*
+!.env.example
+**/firebase-credentials.json
+**/*-credentials.json
+**/*.pem
+**/*.key
+
+# ========================================
+# Dependencies
+# ========================================
+node_modules/
+**/node_modules/
+venv/
+**/venv/
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# ========================================
+# Build Outputs
+# ========================================
+dist/
+build/
+.next/
+out/
+*.egg-info/
+
+# ========================================
+# IDE & Editor
+# ========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-*
+
+# ========================================
+# OS Files
+# ========================================
+.DS_Store
+Thumbs.db
+*.log
+
+# ========================================
+# Testing & Coverage
+# ========================================
+coverage/
+.coverage
+htmlcov/
+.pytest_cache/
+
+# ========================================
+# Misc
+# ========================================
+*.local
+data/chroma/

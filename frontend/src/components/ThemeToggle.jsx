@@ -7,17 +7,18 @@ export default function ThemeToggle({ className = "" }) {
     return (
         <button
             onClick={toggleTheme}
-            className={`p-2 rounded-full text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 focus:outline-none transition-colors duration-200 ${className}`}
+            className={`p-2.5 rounded-xl transition-all duration-200 hover:scale-105 ${className}`}
+            style={{
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--color-primary)'
+            }}
             aria-label="Toggle Theme"
         >
             {theme === 'dark' ? (
-                <div className="flex items-center gap-2">
-                    <Sun className="h-5 w-5" />
-                </div>
+                <Sun className="h-5 w-5" />
             ) : (
-                <div className="flex items-center gap-2">
-                    <Moon className="h-5 w-5" />
-                </div>
+                <Moon className="h-5 w-5" />
             )}
         </button>
     );
