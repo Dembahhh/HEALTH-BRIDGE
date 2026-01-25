@@ -5,8 +5,66 @@ Common dependencies for API routes (auth, database, etc.).
 """
 
 from typing import Annotated
-from fastapi import Depends
-from app.services.auth import get_current_user
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-# Re-export key dependencies
+# Firebase auth bearer
+security = HTTPBearer(auto_error=False)
+
+
+async def get_current_user(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)]
+) -> dict:
+    """
+    Verify Firebase ID token and return current user.
+    """
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = credentials.credentials
+
+    try:
+        from firebase_admin import auth
+        decoded_token = auth.verify_id_token(token)
+        uid = decoded_token['uid']
+        email = decoded_token.get('email')
+        
+    except Exception as e:
+        print(f"Auth Error: {e}")
+        # For development fallback if firebase creds fail/missing
+        if token == "dev-token": 
+             return {"uid": "dev-user", "email": "dev@example.com"}
+             
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Find or Create User in MongoDB
+    try:
+        from app.models.user import User
+        user = await User.find_one(User.firebase_uid == uid)
+        
+        if not user:
+            user = User(
+                email=email,
+                firebase_uid=uid,
+                display_name=decoded_token.get('name'),
+            )
+            await user.create()
+            
+        return user if user else {"uid": uid, "email": email}
+        
+    except Exception as e:
+        print(f"User DB Error: {e}")
+        # Fallback if DB fails but token valid
+        return {"uid": uid, "email": email}
+
+
+# Type alias for dependency injection
 CurrentUser = Annotated[dict, Depends(get_current_user)]
