@@ -15,6 +15,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
+        extra="ignore",
     )
 
     # Environment
@@ -29,9 +30,15 @@ class Settings(BaseSettings):
     CHROMA_PERSIST_DIR: str = "./data/chroma"
 
     # LLM
-    LLM_PROVIDER: str = "gemini"
+    LLM_PROVIDER: str = "github"
+    LLM_MODEL: str = "openai/gpt-4o-mini"
+    LLM_TEMPERATURE: float = 1.0
     GOOGLE_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
+    GEMINI_API_KEY: str = ""
+    GITHUB_TOKEN: str = ""
+    GITHUB_BASE_URL: str = "https://models.github.ai/inference"
+    AZURE_OPENAI_API_KEY: str = ""
 
     # Firebase
     FIREBASE_CREDENTIALS_PATH: str = "./firebase-credentials.json"

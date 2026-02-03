@@ -4,14 +4,26 @@ Chat API Routes
 Endpoints for chat sessions and messaging.
 """
 
-from typing import Optional
+from typing import Optional, List
 from uuid import uuid4
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
+import asyncio
+import functools
 
 from app.api.deps import CurrentUser
+from app.models.chat import ChatSession, ChatMessage
+from app.models.plan import HabitPlan, Habit
+from datetime import datetime, timedelta
 
 router = APIRouter()
+
+
+def get_user_id(current_user) -> str:
+    """Extract user ID from current_user (dict or User object)."""
+    if isinstance(current_user, dict):
+        return current_user.get("uid", "unknown")
+    return getattr(current_user, "firebase_uid", str(current_user.id))
 
 
 # Request/Response Models
@@ -38,6 +50,7 @@ class SendMessageResponse(BaseModel):
     message_id: str
     content: str
     agent_name: Optional[str] = None
+    habit_plan_id: Optional[str] = None
 
 
 class MessageItem(BaseModel):
@@ -61,12 +74,18 @@ async def create_session(
     - follow_up: Returning user check-in
     - general: Educational questions
     """
-    session_id = str(uuid4())
+    user_id = get_user_id(current_user)
 
-    # TODO: Create session in database (Phase 7)
+    # Create session in database
+    session = ChatSession(
+        user_id=user_id,
+        session_type=request.session_type,
+        status="active"
+    )
+    await session.create()
 
     return CreateSessionResponse(
-        session_id=session_id,
+        session_id=str(session.id),
         session_type=request.session_type,
         message=f"Session created. Type: {request.session_type}",
     )
@@ -83,26 +102,106 @@ async def send_message(
     This triggers the multi-agent pipeline.
     """
     from app.services.chat import ChatService
-    
-    # Initialize service (in prod, this should be a dependency or singleton)
-    chat_service = ChatService()
-    
+
+    user_id = get_user_id(current_user)
+
+    # Verify session exists and belongs to user
+    session = await ChatSession.get(request.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # Save user message
+    user_message = ChatMessage(
+        session_id=request.session_id,
+        user_id=user_id,
+        role="user",
+        content=request.content
+    )
+    await user_message.create()
+
     try:
-        # We assume the user ID comes from the auth token
-        user_id = current_user.get("uid")
-        
-        # Execute the agent crew
-        result = chat_service.run_intake_session(request.content, user_id)
-        
-        # Result from CrewAI is typically a string or an object with 'raw'
+        # Initialize service and execute agent crew
+        chat_service = ChatService()
+
+        # Run synchronous CrewAI in thread pool to not block async
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            functools.partial(
+                chat_service.run_session,
+                request.content,
+                user_id,
+                session.session_type
+            )
+        )
+
+        # Extract response content
         response_content = str(result)
-        
-        return SendMessageResponse(
-            message_id=str(uuid4()),
+
+        # Save assistant message
+        assistant_message = ChatMessage(
+            session_id=request.session_id,
+            user_id=user_id,
+            role="assistant",
             content=response_content,
             agent_name="HealthBridge Crew"
         )
+        await assistant_message.create()
+
+        # Save HabitPlan if habits were extracted
+        habit_plan_id = None
+        if hasattr(result, 'habits') and result.habits:
+            habits = []
+            for h in result.habits:
+                # Map from agent schema (action/trigger/rationale)
+                # to plan schema (title/description/category)
+                title = h.get("title") or h.get("action", "Habit")
+                description = h.get("description") or h.get("rationale", "")
+                category = h.get("category") or h.get("trigger", "general")
+                habits.append(Habit(
+                    title=title[:100] if title else "Habit",
+                    description=description,
+                    frequency=h.get("frequency", "daily"),
+                    category=category,
+                    difficulty=h.get("difficulty", "easy")
+                ))
+
+            plan = HabitPlan(
+                user_id=user_id,
+                week_number=1,
+                start_date=datetime.utcnow(),
+                end_date=datetime.utcnow() + timedelta(weeks=4),
+                habits=habits,
+                status="active"
+            )
+            await plan.create()
+            habit_plan_id = str(plan.id)
+
+            # Link plan to session
+            session.habit_plan_id = habit_plan_id
+
+        # Update session timestamp
+        session.update_timestamp()
+        await session.save()
+
+        return SendMessageResponse(
+            message_id=str(assistant_message.id),
+            content=response_content,
+            agent_name="HealthBridge Crew",
+            habit_plan_id=habit_plan_id
+        )
+
     except Exception as e:
+        # Save error as system message for debugging
+        error_message = ChatMessage(
+            session_id=request.session_id,
+            user_id=user_id,
+            role="system",
+            content=f"Error: {str(e)}"
+        )
+        await error_message.create()
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -112,6 +211,53 @@ async def get_session_messages(
     current_user: CurrentUser,
 ):
     """Get all messages in a session."""
-    # TODO: Retrieve messages from database (Phase 7)
+    user_id = get_user_id(current_user)
 
-    return {"session_id": session_id, "messages": []}
+    # Verify session exists and belongs to user
+    session = await ChatSession.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # Retrieve messages
+    messages = await ChatMessage.find(
+        ChatMessage.session_id == session_id
+    ).sort("+created_at").to_list()
+
+    return {
+        "session_id": session_id,
+        "messages": [
+            MessageItem(
+                role=msg.role,
+                content=msg.content,
+                created_at=msg.created_at.isoformat()
+            )
+            for msg in messages
+        ]
+    }
+
+
+@router.get("/sessions")
+async def list_sessions(
+    current_user: CurrentUser,
+):
+    """List all sessions for the current user."""
+    user_id = get_user_id(current_user)
+
+    sessions = await ChatSession.find(
+        ChatSession.user_id == user_id
+    ).sort("-created_at").to_list()
+
+    return {
+        "sessions": [
+            {
+                "session_id": str(s.id),
+                "session_type": s.session_type,
+                "status": s.status,
+                "created_at": s.created_at.isoformat(),
+                "updated_at": s.updated_at.isoformat()
+            }
+            for s in sessions
+        ]
+    }

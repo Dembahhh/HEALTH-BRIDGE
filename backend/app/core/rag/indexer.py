@@ -338,7 +338,6 @@ class GuidelineIndexer:
             collection_name: ChromaDB collection name
         """
         self.chunker = DocumentChunker(
-            chunk_size=500,
             chunk_overlap=50,
             min_chunk_size=100,
         )

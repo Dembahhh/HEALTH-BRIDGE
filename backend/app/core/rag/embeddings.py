@@ -5,14 +5,20 @@ Handles text embedding generation for RAG using SentenceTransformers.
 Supports batch embedding for efficient indexing of guideline documents.
 """
 
+import os
 from typing import List, Optional
 from functools import lru_cache
+
+# Prevent PyTorch/tokenizers thread deadlocks on Windows
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
 
 
 class EmbeddingClient:
     """
     Client for generating text embeddings.
-    
+
     Uses SentenceTransformers for local embedding generation.
     Default model: all-MiniLM-L6-v2 (fast, good quality for semantic search)
     Alternative: text-embedding-3-large via OpenAI API
@@ -21,13 +27,15 @@ class EmbeddingClient:
     def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
         """
         Initialize the embedding model.
-        
+
         Args:
             model_name: SentenceTransformer model name or path
         """
-        # Lazy import to avoid loading model until needed
+        import torch
+        torch.set_num_threads(1)
+
         from sentence_transformers import SentenceTransformer
-        
+
         self.model = SentenceTransformer(model_name)
         self.model_name = model_name
         self.embedding_dim = self.model.get_sentence_embedding_dimension()

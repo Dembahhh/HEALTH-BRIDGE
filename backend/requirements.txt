@@ -8,13 +8,16 @@ motor>=3.3.0
 beanie>=1.25.0
 
 # Vector DB & RAG
-# chromadb>=0.4.22
-# sentence-transformers>=2.3.0
+chromadb>=0.4.22
+sentence-transformers>=2.3.0
 
 # Agent framework
-# crewai>=0.28.0
-langchain>=0.1.0
-langchain-community>=0.0.20
+crewai>=0.80.0
+google-genai
+google-generativeai
+# langchain dependencies are managed by crewai, but if needed explicitly:
+langchain>=0.3.0
+langchain-community>=0.3.0
 
 # Background tasks
 celery>=5.3.0
@@ -24,6 +27,7 @@ redis>=5.0.0
 firebase-admin>=6.4.0
 
 # Utils
+opik
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
 httpx>=0.26.0
