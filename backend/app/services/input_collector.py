@@ -1,220 +1,65 @@
 """
-Multi-turn input collector for HealthBridge agent sessions.
+Multi-turn Input Collector for HEALTH-BRIDGE
 
-Guides users through providing sufficient information before running
-the full CrewAI pipeline. Asks one question at a time and waits for
-user responses. This avoids wasting LLM tokens on vague input.
+Phase 3 Implementation:
+- Uses LLM-based extraction instead of regex
+- Tracks conversation state across turns
+- Handles clarifications and implied information
+- Detects urgent symptoms
 
-Usage:
-    collector = InputCollector()
-    result = collector.assess(["I'm 45 male"], "intake")
-    if not result["ready"]:
-        print(result["question"])  # single question to ask
-    else:
-        run_crew(result["combined_input"])
+Maintains backward compatibility with existing API.
 """
 
 import re
 from typing import Dict, List, Optional
+from app.services.conversation_state import ConversationState, FieldConfidence
+from app.services.llm_extractor import get_extractor, LLMExtractor
+from app.services.question_generator import get_question_generator, QuestionGenerator
 
-
-# ---------------------------------------------------------------------------
-# Field definitions per session type
-# ---------------------------------------------------------------------------
-
-INTAKE_FIELDS = {
-    "age": {
-        "patterns": [
-            r"\b(\d{1,3})\s*(year|yr|y\.?o\.?)",
-            r"\bage\b[:\s]*(\d{1,3})",
-            r"\b(?:i'?m|i am|am)\s*(\d{2})\b",
-            r"\b(\d{2})\s*(year|yr)s?\s*old\b",
-            r"^\s*(\d{2,3})\s*$", 
-        ],
-        "question": "How old are you?",
-        "priority": 1,
-        "order": 1,
-    },
-    "sex": {
-        "patterns": [
-            r"\b(male|female|man|woman|boy|girl)\b",
-            r"\bsex[:\s]*(m|f|male|female)\b",
-            r"^\s*(m|f|male|female)\s*$",  
-        ],
-        "question": "Are you male or female?",
-        "priority": 1,
-        "order": 2,
-    },
-    "conditions": {
-        "patterns": [
-            # Specific conditions mentioned
-            r"\b(hypertension|diabetes|diabetic|high\s*blood\s*pressure|heart|cholesterol)\b",
-            # "I have X condition" patterns
-            r"\b(diagnosed|condition|suffer|have).{0,30}(disease|illness)\b",
-            # Negative responses - "no", "none", "don't have"
-            r"\b(no|none|nope|nah|not?\s+really)\b.{0,50}(condition|disease|illness|health\s+problem)",
-            r"\b(don'?t|do\s+not|never).{0,30}(have|had).{0,30}(condition|disease|illness|health\s+problem)",
-            r"\bno\s+(known\s+)?(condition|disease|illness|health\s+problem)",
-            # Simple negative answers
-            r"^\s*(no|none|nope|nah|not?\s+really)\s*$",
-            r"^\s*[\"']?(no|none)[\"']?\s*$",  # "none" or 'none'
-            # "None that I know of" variations
-            r"\b(none|no|not).*\b(know|aware)\b",
-            # Healthy/fine responses
-            r"\b(healthy|fine|good\s+health|no\s+problem)\b",
-        ],
-        "question": "Do you have any existing health conditions like hypertension, diabetes, or heart disease? (You can share details or just say \"none\")",
-        "priority": 1,
-        "order": 3,
-    },
-    "family_history": {
-        "patterns": [
-            # Matches "Relative word" + "Condition word" or vice versa
-            r"\b(father|mother|parent|family|brother|sister|sibling|uncle|aunt|grand|cousin|relative|kin|they|he|she|member|history)\b.*\b(had|has|have|history|diabete|hypertension|heart|stroke|pressure|condition|illness|disease|problem)\b",
-            r"\b(history|diabete|hypertension|heart|stroke|pressure|condition|illness|disease|problem)\b.*\b(father|mother|parent|family|brother|sister|uncle|aunt|grand|cousin|relative|kin|member)\b",
-            r"\bfamily\s+history\b",
-            r"\b(inherit|genetic|hereditary)\w*\b",
-            r"\bno\s+family\s+history\b",
-            # Anchored "Yes/My [relative]" - very common response to the direct question
-            r"^\s*(yes\s+)?(my\s+)?(father|mother|parent|family|brother|sister|sibling|uncle|aunt|grand|cousin|relative)\b",
-        ],
-        "question": "Does anyone in your family have hypertension, diabetes, or heart disease? (e.g., \"my father had hypertension\" or \"no family history\")",
-        "priority": 2,
-        "order": 4,
-    },
-    "smoking": {
-        "patterns": [
-            r"\b(smok|cigarette|tobacco|nicotine)\w*\b",
-            r"\b(don'?t|do not|never)\s+smoke\b",
-            r"\bnon[\s-]?smoker\b",
-            # Simple yes/no answers (when asked "Do you smoke?")
-            r"^\s*(yes|no|nope|nah|yeah|yep|daily|occasionally|sometimes|rarely|never)\s*$",
-        ],
-        "question": "Do you smoke? (yes/no, or how often)",
-        "priority": 2,
-        "order": 5,
-    },
-    "alcohol": {
-        "patterns": [
-            r"\b(alcohol|drink|beer|wine|spirit|liquor)\w*\b",
-            r"\b(don'?t|do not|never)\s+drink\b",
-            r"\bteetotal\w*\b",
-            # Simple yes/no answers (when asked "Do you drink?")
-            r"^\s*(yes|no|nope|nah|yeah|yep|occasionally|sometimes|rarely|regularly|never)\s*$",
-        ],
-        "question": "Do you drink alcohol? (no / occasionally / regularly)",
-        "priority": 2,
-        "order": 6,
-    },
-    "diet": {
-        "patterns": [
-            r"\b(eat|food|diet|vegetable|fruit|meat|fish|ugali|chapati|rice|bread|sugar|salt|soda|processed)\w*\b",
-            r"\b(vegetarian|vegan|pescatarian)\b",
-            r"\b(healthy|unhealthy|junk|fast\s*food)\b",
-        ],
-        "question": "What does your typical diet look like? (e.g., \"mostly rice and vegetables\" or \"lots of processed food\")",
-        "priority": 2,
-        "order": 7,
-    },
-    "activity": {
-        "patterns": [
-            r"\b(exercise|walk|run|gym|sport|active|sedentary|jog|swim|cycle|workout)\w*\b",
-            r"\b(don'?t|do not|never)\s+(exercise|move|walk)\b",
-            r"\b(sit|desk)\s*(all\s*day|job)\b",
-        ],
-        "question": "How physically active are you? (e.g., \"sedentary\", \"walk 30 min daily\", \"exercise 3x/week\")",
-        "priority": 2,
-        "order": 8,
-    },
-    "constraints": {
-        "patterns": [
-            r"\b(can'?t|cannot|unable|difficult|hard|no\s+access|expensive|afford)\b",
-            r"\b(work|job|shift|night|schedule)\b.*\b(long|busy|irregular)\b",
-            r"\b(unsafe|flood|rain|danger)\b",
-            r"\b(budget|money|cost)\b",
-            r"\bno\s+constraints?\b",
-        ],
-        "question": "Are there any constraints that might affect your health habits? (e.g., \"long work hours\", \"limited food access\", \"unsafe to walk outside\" — or \"none\")",
-        "priority": 3,
-        "order": 9,
-    },
-}
-
-FOLLOW_UP_QUESTIONS = [
-    {
-        "id": "habits_followed",
-        "question": "Which habits from your plan have you been able to follow?",
-        "patterns": [
-            r"\b(follow|kept|doing|did|stick|stuck|maintain)\w*\b",
-            r"\b(habit|plan|routine|goal)\w*\b",
-            r"\b(walk|exercise|eat|diet|water|sleep|meditat)\w*\b",
-        ],
-    },
-    {
-        "id": "habits_stopped",
-        "question": "Have you stopped or struggled with any habits? Which ones and why?",
-        "patterns": [
-            r"\b(stop|quit|skip|miss|fail|struggle|hard|difficult|couldn'?t)\w*\b",
-            r"\b(gave\s+up|dropped|abandoned)\b",
-        ],
-    },
-    {
-        "id": "new_habits",
-        "question": "Have you started any new healthy habits on your own?",
-        "patterns": [
-            r"\b(new|start|began|added|also|extra)\w*\b.*\b(habit|routine|exercise|diet)\w*\b",
-            r"\b(habit|routine)\w*\b.*\b(new|start|began|added)\w*\b",
-        ],
-    },
-    {
-        "id": "health_readings",
-        "question": "Have you had any recent health readings? (blood pressure, weight, blood sugar)",
-        "patterns": [
-            r"\b(blood\s*pressure|bp|sugar|glucose|weight|bmi|reading|measure)\b",
-            r"\b\d{2,3}/\d{2,3}\b",  # BP format
-            r"\b\d{2,3}\s*(kg|lb|pound)\b",  # weight
-        ],
-    },
-    {
-        "id": "barriers",
-        "question": "Are you facing any challenges or barriers to following your plan?",
-        "patterns": [
-            r"\b(barrier|challenge|problem|issue|block|obstacle)\w*\b",
-            r"\b(rain|flood|unsafe|expensive|busy|tired|sick|injury)\b",
-            r"\b(can'?t|cannot|unable)\b",
-        ],
-    },
-    {
-        "id": "feelings",
-        "question": "How are you feeling overall — any symptoms or concerns?",
-        "patterns": [
-            r"\b(feel|feeling|felt)\w*\b",
-            r"\b(symptom|pain|ache|dizzy|tired|fatigue|headache|chest)\w*\b",
-            r"\b(better|worse|same|fine|good|bad)\b",
-        ],
-    },
-]
 
 # Thresholds
-INTAKE_MIN_FIELDS = 6  
-INTAKE_MAX_TURNS = 12  
-FOLLOW_UP_MIN_QUESTIONS = 3 
-FOLLOW_UP_MAX_TURNS = 7  
+INTAKE_MIN_FIELDS = 6
+INTAKE_MAX_TURNS = 12
+FOLLOW_UP_MIN_QUESTIONS = 3
+FOLLOW_UP_MAX_TURNS = 7
 GENERAL_MIN_LENGTH = 15
 
-
-# ---------------------------------------------------------------------------
-# InputCollector
-# ---------------------------------------------------------------------------
 
 class InputCollector:
     """
     Guides users through providing sufficient information before running
-    the full CrewAI crew pipeline. Asks one question at a time.
-
-    Designed to be used by both the CLI and the API route.
+    the CrewAI pipeline.
+    
+    Phase 3: Now uses LLM extraction with regex fallback.
     """
-
+    
+    def __init__(self, use_llm: bool = True):
+        """
+        Initialize collector.
+        
+        Args:
+            use_llm: Whether to use LLM extraction (False for testing)
+        """
+        self.extractor: LLMExtractor = get_extractor(use_llm=use_llm)
+        self.question_gen: QuestionGenerator = get_question_generator()
+        
+        # State tracking (for stateful usage)
+        self._states: Dict[str, ConversationState] = {}
+    
+    def get_or_create_state(
+        self,
+        user_id: str,
+        session_type: str = "intake"
+    ) -> ConversationState:
+        """Get or create conversation state for a user."""
+        key = f"{user_id}_{session_type}"
+        if key not in self._states:
+            self._states[key] = ConversationState(
+                session_type=session_type,
+                user_id=user_id
+            )
+        return self._states[key]
+    
     def assess(
         self,
         messages: List[str],
@@ -222,205 +67,224 @@ class InputCollector:
         user_habits: Optional[List[str]] = None,
     ) -> Dict:
         """
-        Assess whether accumulated messages contain enough info to run the crew.
-
+        Assess whether accumulated messages contain enough info.
+        
+        This is the main API - maintains backward compatibility.
+        
         Args:
-            messages: List of user messages collected so far (may be empty).
-            session_type: One of "intake", "follow_up", "general".
-            user_habits: For follow_up sessions, list of user's existing habits
-                         from their plan (to ask about specifically).
-
+            messages: List of user messages collected so far
+            session_type: One of "intake", "follow_up", "general"
+            user_habits: For follow_up, list of user's existing habits
+            
         Returns:
-            dict with keys:
-              - ready (bool): True if the crew should run.
-              - combined_input (str): Merged text to pass to the crew (if ready).
-              - question (str): The next question to ask the user (if not ready).
-              - detected_fields (dict): Which fields were found.
-              - turn (int): How many messages have been collected.
+            dict with ready, combined_input/question, detected_fields, turn
         """
-        combined = " ".join(messages)
-        turn = len(messages)
-
+        # Create a temporary state for this assessment
+        state = ConversationState(session_type=session_type)
+        
+        # Process each message
+        for i, msg in enumerate(messages):
+            state.add_user_message(msg)
+            
+            # Extract fields from this message
+            context = messages[:i] if i > 0 else None
+            last_field = state.last_question_field
+            
+            extraction = self.extractor.extract_all(msg, context, last_field)
+            
+            # Add urgent symptoms
+            for symptom in extraction.urgent_symptoms:
+                state.add_urgent_flag(symptom)
+            
+            # Add extracted fields
+            for name, result in extraction.fields.items():
+                confidence = FieldConfidence.HIGH if result.confidence >= 0.8 else \
+                            FieldConfidence.MEDIUM if result.confidence >= 0.5 else \
+                            FieldConfidence.LOW
+                
+                if result.needs_clarification:
+                    confidence = FieldConfidence.NEEDS_CLARIFICATION
+                
+                state.set_field(
+                    name=name,
+                    value=result.value,
+                    confidence=confidence,
+                    source_message=msg,
+                    clarifying_question=result.clarifying_question
+                )
+            
+            # Add implied fields
+            for field, value in extraction.implied.items():
+                state.set_implied(field, value, "context")
+        
+        # Assess by session type
         if session_type == "intake":
-            return self._assess_intake(combined, turn, messages)
+            return self._assess_intake(state)
         elif session_type == "follow_up":
-            return self._assess_follow_up(combined, turn, user_habits or [])
+            return self._assess_follow_up(state, user_habits or [])
         else:
-            return self._assess_general(combined, turn)
-
+            return self._assess_general(state)
+    
+    def assess_message(
+        self,
+        message: str,
+        state: ConversationState,
+        user_habits: Optional[List[str]] = None
+    ) -> Dict:
+        """
+        Assess a single new message with existing state.
+        
+        More efficient for multi-turn conversations.
+        """
+        # Add message to state
+        state.add_user_message(message)
+        
+        # Extract from this message
+        context = state.get_recent_messages(5)
+        extraction = self.extractor.extract_all(
+            message, 
+            context[:-1] if len(context) > 1 else None,
+            state.last_question_field
+        )
+        
+        # Process extraction
+        for symptom in extraction.urgent_symptoms:
+            state.add_urgent_flag(symptom)
+        
+        for name, result in extraction.fields.items():
+            confidence = FieldConfidence.HIGH if result.confidence >= 0.8 else \
+                        FieldConfidence.MEDIUM if result.confidence >= 0.5 else \
+                        FieldConfidence.LOW
+            
+            if result.needs_clarification:
+                confidence = FieldConfidence.NEEDS_CLARIFICATION
+            
+            state.set_field(name, result.value, confidence, message, result.clarifying_question)
+        
+        for field, value in extraction.implied.items():
+            state.set_implied(field, value, "context")
+        
+        # Assess
+        if state.session_type == "intake":
+            return self._assess_intake(state)
+        elif state.session_type == "follow_up":
+            return self._assess_follow_up(state, user_habits or [])
+        else:
+            return self._assess_general(state)
+    
     def get_welcome_question(
         self,
         session_type: str,
         user_habits: Optional[List[str]] = None,
     ) -> str:
-        """Get the initial welcome question for a session type."""
-        result = self.assess([], session_type, user_habits)
-        return result.get("question", "How can I help you today?")
-
-    # ------------------------------------------------------------------
-    # Intake — ask one question at a time
-    # ------------------------------------------------------------------
-
-    def _assess_intake(self, combined: str, turn: int, messages: List[str] = None) -> Dict:
-        detected = {}
-        missing_by_order = []
+        """Get the initial welcome question."""
+        welcome, _ = self.question_gen.get_welcome_message(session_type, user_habits)
+        return welcome
+    
+    def _assess_intake(self, state: ConversationState) -> Dict:
+        """Assess intake session."""
         
-        # Use individual messages for anchored pattern matching
-        individual_messages = messages or []
-
-        for field, config in INTAKE_FIELDS.items():
-            # Check against combined string (for patterns that span words)
-            found_in_combined = any(
-                re.search(p, combined, re.IGNORECASE) for p in config["patterns"]
-            )
-            
-            # Also check each individual message (for anchored patterns like ^\s*(m|f)\s*$)
-            found_in_individual = any(
-                re.search(p, msg, re.IGNORECASE) 
-                for msg in individual_messages 
-                for p in config["patterns"]
-            )
-            
-            found = found_in_combined or found_in_individual
-            detected[field] = found
-            if not found:
-                missing_by_order.append((config["order"], field, config))
-
-        # Sort by order to ask questions in logical sequence
-        missing_by_order.sort(key=lambda x: x[0])
-        fields_found = sum(1 for v in detected.values() if v)
-
+        fields_collected = state.count_collected_fields()
+        turn = state.turn_count
+        
         # Check if ready
-        enough_fields = fields_found >= INTAKE_MIN_FIELDS
+        enough_fields = fields_collected >= INTAKE_MIN_FIELDS
         safety_valve = turn >= INTAKE_MAX_TURNS
-
+        has_urgent = state.has_urgent_symptoms()
+        
+        if has_urgent:
+            # Get urgent response
+            question, _ = self.question_gen.get_next_question(state, "intake")
+            return {
+                "ready": False,
+                "question": question,
+                "detected_fields": state.get_detected_fields_dict(),
+                "turn": turn,
+                "urgent": True,
+                "urgent_symptoms": state.urgent_flags
+            }
+        
         if enough_fields or safety_valve:
             return {
                 "ready": True,
-                "combined_input": combined,
-                "detected_fields": detected,
+                "combined_input": state.get_combined_input(),
+                "detected_fields": state.get_detected_fields_dict(),
                 "turn": turn,
+                "collected_values": {k: v.value for k, v in state.collected_fields.items()},
+                "implied_fields": state.implied_fields
             }
-
-        # --- Build the next question ---
-        if turn == 0:
-            # First interaction: warm welcome + first question
-            first_q = missing_by_order[0][2]["question"] if missing_by_order else "How old are you?"
-            question = (
-                "Welcome! I'm here to help assess your health profile and "
-                "create a personalized plan.\n\n"
-                f"Let's start: {first_q}"
-            )
-        else:
-            # Acknowledge ALL fields found so far
-            found_names = [f.replace("_", " ") for f, v in detected.items() if v]
-            if found_names:
-                ack = f"Thanks! I've noted your {', '.join(found_names)}.\n\n"
-            else:
-                ack = ""
-
-            if missing_by_order:
-                next_q = missing_by_order[0][2]["question"]
-                question = f"{ack}{next_q}"
-            else:
-                question = f"{ack}Is there anything else you'd like to add about your health?"
-
+        
+        # Get next question
+        question, field = self.question_gen.get_next_question(state, "intake")
+        
+        if question is None:
+            # No more questions but not enough fields - use fallback
+            question = "Is there anything else about your health you'd like to share?"
+        
+        state.add_agent_message(question, field)
+        
         return {
             "ready": False,
             "question": question,
-            "detected_fields": detected,
+            "detected_fields": state.get_detected_fields_dict(),
             "turn": turn,
+            "next_field": field
         }
-
-    # ------------------------------------------------------------------
-    # Follow-up — ask about specific habits
-    # ------------------------------------------------------------------
-
+    
     def _assess_follow_up(
         self,
-        combined: str,
-        turn: int,
-        user_habits: List[str],
+        state: ConversationState,
+        user_habits: List[str]
     ) -> Dict:
-        detected = {}
-        questions_answered = 0
-
-        for item in FOLLOW_UP_QUESTIONS:
-            found = any(
-                re.search(p, combined, re.IGNORECASE) for p in item["patterns"]
-            )
-            detected[item["id"]] = found
-            if found:
-                questions_answered += 1
-
-        # Check if ready
-        enough_answers = questions_answered >= FOLLOW_UP_MIN_QUESTIONS
+        """Assess follow-up session."""
+        
+        fields_collected = state.count_collected_fields()
+        turn = state.turn_count
+        combined = state.get_combined_input()
+        
+        # Check readiness
+        enough_answers = fields_collected >= FOLLOW_UP_MIN_QUESTIONS
         safety_valve = turn >= FOLLOW_UP_MAX_TURNS
         long_enough = len(combined.split()) >= 20
-
+        
         if enough_answers or safety_valve or long_enough:
             return {
                 "ready": True,
                 "combined_input": combined,
-                "detected_fields": detected,
-                "turn": turn,
+                "detected_fields": state.get_detected_fields_dict(),
+                "turn": turn
             }
-
-        # --- Build the next question ---
-        if turn == 0:
-            # First interaction: personalized welcome
-            if user_habits:
-                habits_list = ", ".join(user_habits[:3])
-                if len(user_habits) > 3:
-                    habits_list += f" (and {len(user_habits) - 3} more)"
-                question = (
-                    f"Welcome back! Last time we set up these habits for you:\n"
-                    f"  {habits_list}\n\n"
-                    f"How have things been going? Which habits have you been able to follow?"
-                )
-            else:
-                question = (
-                    "Welcome back! Let's check in on your progress.\n\n"
-                    "Which habits from your plan have you been able to follow?"
-                )
-        else:
-            # Find next unanswered question
-            next_question = None
-            for item in FOLLOW_UP_QUESTIONS:
-                if not detected.get(item["id"]):
-                    next_question = item["question"]
-                    break
-
-            if next_question:
-                # Acknowledge and ask next
-                if questions_answered > 0:
-                    question = f"Got it, thanks for sharing.\n\n{next_question}"
-                else:
-                    question = next_question
-            else:
-                question = "Is there anything else you'd like to share about your progress?"
-
+        
+        # Get next question
+        question, field = self.question_gen.get_next_question(state, "follow_up")
+        
+        if question is None:
+            question = "Is there anything else you'd like to share about your progress?"
+        
+        state.add_agent_message(question, field)
+        
         return {
             "ready": False,
             "question": question,
-            "detected_fields": detected,
-            "turn": turn,
+            "detected_fields": state.get_detected_fields_dict(),
+            "turn": turn
         }
-
-    # ------------------------------------------------------------------
-    # General / educational — just need a clear question
-    # ------------------------------------------------------------------
-
-    def _assess_general(self, combined: str, turn: int) -> Dict:
-        # For general, we just need a reasonable question/topic
+    
+    def _assess_general(self, state: ConversationState) -> Dict:
+        """Assess general/educational session."""
+        
+        combined = state.get_combined_input()
+        turn = state.turn_count
+        
+        # Check if we have enough for a general query
         has_question = bool(re.search(r"\?|how|what|why|when|can|should|is it", combined, re.IGNORECASE))
         has_topic = bool(re.search(
-            r"\b(diet|exercise|blood\s*pressure|diabetes|hypertension|heart|weight|habit|health|symptom|warning|sign)\w*\b",
+            r"\b(diet|exercise|blood\s*pressure|diabetes|hypertension|heart|weight|habit|health|symptom)\w*\b",
             combined,
             re.IGNORECASE
         ))
         long_enough = len(combined.strip()) >= GENERAL_MIN_LENGTH
-
+        
         if (has_question or has_topic or long_enough) or turn >= 2:
             return {
                 "ready": True,
@@ -428,22 +292,22 @@ class InputCollector:
                 "detected_fields": {"has_question": has_question, "has_topic": has_topic},
                 "turn": turn,
             }
-
+        
         if turn == 0:
             question = (
                 "Hi! I can help answer health questions about diet, exercise, "
                 "blood pressure, diabetes, and healthy habits.\n\n"
                 "What would you like to know? For example:\n"
-                "  - \"What foods should I avoid for high blood pressure?\"\n"
-                "  - \"How much exercise do I need per week?\"\n"
-                "  - \"What are warning signs of a stroke?\""
+                "  • \"What foods should I avoid for high blood pressure?\"\n"
+                "  • \"How much exercise do I need per week?\"\n"
+                "  • \"What are warning signs of a stroke?\""
             )
         else:
             question = (
                 "Could you be more specific about what you'd like to know?\n"
                 "Try asking a question like \"How can I lower my blood pressure naturally?\""
             )
-
+        
         return {
             "ready": False,
             "question": question,
