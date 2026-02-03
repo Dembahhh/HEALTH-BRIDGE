@@ -1,43 +1,3 @@
-# System
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.DS_Store
-Thumbs.db
-.ipynb_checkpoints/
-
-# Virtual Environment
-venv/
-env/
-.env
-.venv
-
-# IDEs
-.vscode/
-.idea/
-*.swp
-.claude/
-.qodo/
-
-# Project Specific - Reference/Large Files
-/Health-bridge/
-/Health-bridge-ref/
-/Health-bridge.zip
-/Health-bridge AI f98c87f465064292bb819817cad1ff63.md
-/AGENTS.md
-
-# Application Data
-*.log
-backend/data/
-backend/chroma_db/
-backend/firebase-credentials.json
-backend/__pycache__/
-
-# Temporary
-.tmp/
-tmp/
-
 # ========================================
 # SECRETS - NEVER COMMIT THESE
 # ========================================
@@ -62,6 +22,9 @@ venv/
 __pycache__/
 **/__pycache__/
 *.py[cod]
+*.pyc
+*.pyo
+*.pyd
 
 # ========================================
 # Build Outputs
@@ -80,24 +43,50 @@ out/
 *.swp
 *.swo
 *.sublime-*
+.claude/
+.qodo/
+.ipynb_checkpoints/
 
 # ========================================
 # OS Files
 # ========================================
 .DS_Store
 Thumbs.db
-*.log
 
 # ========================================
 # Testing & Coverage
 # ========================================
+# Test scripts
+test_*.py
+verify_*.py
+**/tests/
 coverage/
 .coverage
 htmlcov/
 .pytest_cache/
 
 # ========================================
-# Misc
+# Documentation (Reference Files)
 # ========================================
-*.local
+docs/
+/Health-bridge/
+/Health-bridge-ref/
+/Health-bridge.zip
+/Health-bridge AI f98c87f465064292bb819817cad1ff63.md
+/AGENTS.md
+
+# ========================================
+# Application Data & Logs
+# ========================================
+*.log
+backend/data/
+backend/chroma_db/
 data/chroma/
+
+# ========================================
+# Temporary Files
+# ========================================
+.tmp/
+tmp/
+*.local
+nul
