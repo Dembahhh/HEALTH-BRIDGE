@@ -25,10 +25,14 @@ class SemanticMemory:
 
         from app.core.rag.embeddings import get_embedding_client
 
-        # Wrapper to make our EmbeddingClient compatible with ChromaDB.
-        # Note: ChromaDB deprecation warnings are expected - they don't affect functionality.
-        # Full interface compliance would require chasing a moving target of methods.
+        # Wrapper to make our EmbeddingClient compatible with ChromaDB
         class ChromaEmbeddingWrapper(embedding_functions.EmbeddingFunction):
+            def __init__(self):
+                pass  # Required by newer ChromaDB
+
+            def name(self) -> str:
+                return "healthbridge_embeddings"
+
             def __call__(self, input: List[str]) -> List[List[float]]:
                 client = get_embedding_client()
                 return client.embed_batch(input)

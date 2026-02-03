@@ -589,3 +589,87 @@ class ChatService:
             )
         except Exception as e:
             print(f"Cognee save sync wrapper failed: {e}")
+
+    # =========================================================================
+    # PHASE 5: Pattern Detection Integration
+    # =========================================================================
+
+    def run_session_with_patterns(
+        self,
+        user_input: str,
+        user_id: str,
+        session_type: str = "follow_up",
+        detected_fields: Optional[Dict] = None,
+        conversation_history: Optional[List[str]] = None,
+        previous_patterns: Optional[List[Dict]] = None
+    ) -> Dict:
+        """
+        Run session with pattern detection and intervention generation.
+
+        Enhanced version that includes:
+        - Pattern analysis from conversation
+        - Intervention recommendations
+        - Pattern-informed crew execution
+
+        Args:
+            user_input: Combined user input
+            user_id: User identifier
+            session_type: Type of session
+            detected_fields: Pre-extracted fields
+            conversation_history: List of messages
+            previous_patterns: Patterns from earlier sessions
+
+        Returns:
+            Dict with crew_result, patterns, and interventions
+        """
+        from app.services.pattern_detector import get_pattern_detector
+        from app.services.intervention_engine import get_intervention_engine
+
+        # Initialize detectors
+        pattern_detector = get_pattern_detector()
+        intervention_engine = get_intervention_engine()
+
+        # Detect patterns from conversation
+        messages = conversation_history or [user_input]
+        patterns = pattern_detector.analyze_session(messages)
+
+        # Get habit summary
+        habit_summary = pattern_detector.get_habit_summary(messages)
+
+        # Generate interventions
+        interventions = intervention_engine.generate_interventions(patterns, habit_summary)
+
+        # Build enhanced context for crew
+        pattern_context = ""
+        if patterns:
+            pattern_context = "\n\nDetected patterns:\n"
+            for p in patterns[:3]:
+                pattern_context += f"- {p.description}\n"
+
+        # Run crew with enhanced context
+        enhanced_input = user_input + pattern_context
+
+        crew_result = self.run_session(
+            user_input=enhanced_input,
+            user_id=user_id,
+            session_type=session_type,
+            detected_fields=detected_fields,
+            conversation_history=conversation_history
+        )
+
+        # Format intervention message
+        intervention_message = ""
+        if interventions:
+            intervention_message = intervention_engine.format_intervention_message(interventions)
+
+        return {
+            "crew_result": crew_result,
+            "patterns": [p.to_dict() for p in patterns],
+            "interventions": [i.to_dict() for i in interventions],
+            "intervention_message": intervention_message,
+            "habit_summary": {k: {
+                "status": v.current_status,
+                "trend": v.adherence_trend,
+                "barriers": v.barriers
+            } for k, v in habit_summary.items()}
+        }
