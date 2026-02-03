@@ -16,11 +16,14 @@ def intake_task(agent, user_input: str, user_id: str, memory_context: str = "") 
             f"User said: '{user_input}'\n"
             f"Extract: age, sex, weight category, activity level, diet pattern, "
             f"family history, smoking status, and alcohol habits.\n"
-            f"If any field is missing, make a reasonable assumption and note it.\n"
+            f"Analyze the nuance in the user's description. While you should not invent data, "
+            f"you should carefully extract implications from their daily routine or comments. "
+            f"If a field is completely missing, use 'unknown'. "
+            f"Use 'unknown' for categorical literals only as a last resort.\n"
             f"\n{memory_context}"
         ),
         agent=agent,
-        expected_output="Structured Profile JSON matching the schema",
+        expected_output="Structured Profile JSON matching the schema with ONLY user-provided data",
         output_pydantic=Profile
     )
 

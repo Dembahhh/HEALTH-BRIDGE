@@ -1,19 +1,53 @@
 import json
+import re
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+def strip_json_comments(json_str: str) -> str:
+    """
+    Remove inline comments from JSON strings that LLMs sometimes add.
+    Handles both // comments and trailing comments after values.
+
+    Example:
+        '{"age": 23, // comment here\n"sex": "female"}'
+        -> '{"age": 23,\n"sex": "female"}'
+    """
+    if not isinstance(json_str, str):
+        return json_str
+
+    # Remove // comments
+    json_str = re.sub(r'\s*//[^\n]*', '', json_str)
+    # Remove /* */ comments
+    json_str = re.sub(r'/\*.*?\*/', '', json_str, flags=re.DOTALL)
+
+    return json_str
+
 
 # --- Core Models ---
 
 class Profile(BaseModel):
     """User health profile collected during intake."""
     age: int = Field(..., description="Age of the user")
-    sex: Literal["male", "female", "other"] = Field(..., description="Sex of the user")
+    sex: Literal["male", "female", "other", "unknown"] = Field(..., description="Sex of the user")
     weight_category: str = Field(..., description="Self-reported weight category or BMI band")
-    activity_level: Literal["sedentary", "light", "moderate", "active"] = Field(..., description="General activity level")
+    activity_level: Literal["sedentary", "light", "moderate", "active", "unknown"] = Field(..., description="General activity level")
     diet_pattern: str = Field(..., description="Brief description of typical diet")
     family_history: List[str] = Field(default_factory=list, description="List of relevant family conditions (e.g. hypertension)")
     smoking: bool = Field(False, description="Does the user smoke?")
     alcohol: str = Field(..., description="Alcohol consumption habits")
+
+    @model_validator(mode="before")
+    @classmethod
+    def strip_comments(cls, data):
+        """Strip JSON comments if the LLM included them."""
+        if isinstance(data, str):
+            data = strip_json_comments(data)
+            try:
+                data = json.loads(data)
+            except json.JSONDecodeError:
+                pass  # Let pydantic handle the error
+        return data
 
 class RiskAssessment(BaseModel):
     """Risk analysis output from the Risk & Guideline Agent."""
