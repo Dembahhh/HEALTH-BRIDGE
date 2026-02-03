@@ -1,7 +1,8 @@
 from opik import track
 from app.agents.crew import HealthBridgeCrew
 from app.services.input_collector import InputCollector
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+from datetime import datetime
 import json
 import re
 
@@ -54,6 +55,16 @@ class ChatServiceResult:
 
 
 class ChatService:
+    """
+    Service layer for managing chat sessions with HealthBridge agents.
+    
+    Phase 1 Improvements:
+    - Structured memory storage (full context, not truncated)
+    - Entity extraction from conversations
+    - Session state tracking
+    - Improved memory recall with type filtering
+    """
+    
     def __init__(self):
         self.crew = HealthBridgeCrew()
         self._memory = None
@@ -87,19 +98,47 @@ class ChatService:
     def _recall_context(self, user_id: str, user_input: str) -> str:
         """
         Pre-flight memory recall: fetch recent memories relevant to this session.
+        
+        IMPROVED: Now retrieves memories by type and provides structured context.
+        
         Returns a formatted string for injection into crew inputs.
         """
         try:
             memory = self._get_memory()
+            
             # Semantic search: find memories relevant to current input
             relevant = memory.recall_memories(user_id, user_input, k=5)
-            # Also get recent memories regardless of query
-            recent = memory.get_recent_memories(user_id, limit=5)
+            
+            # Get recent memories by type for more structured context
+            recent_profile = memory.get_recent_memories(user_id, limit=2, memory_type="profile")
+            recent_habits = memory.get_recent_memories(user_id, limit=2, memory_type="habit_plan")
+            recent_conversation = memory.get_recent_memories(user_id, limit=3, memory_type="conversation")
 
             # Deduplicate by text content
             seen_texts = set()
             all_memories: List[str] = []
-            for m in relevant + recent:
+            
+            # Add typed memories first (more structured)
+            for m in recent_profile:
+                text = m.get("text", "")
+                if text and text not in seen_texts:
+                    seen_texts.add(text)
+                    all_memories.append(f"[profile] {text}")
+            
+            for m in recent_habits:
+                text = m.get("text", "")
+                if text and text not in seen_texts:
+                    seen_texts.add(text)
+                    all_memories.append(f"[habit_plan] {text}")
+            
+            for m in recent_conversation:
+                text = m.get("text", "")
+                if text and text not in seen_texts:
+                    seen_texts.add(text)
+                    all_memories.append(f"[conversation] {text}")
+            
+            # Add semantically relevant memories
+            for m in relevant:
                 text = m.get("text", "")
                 if text and text not in seen_texts:
                     seen_texts.add(text)
@@ -109,8 +148,9 @@ class ChatService:
             if not all_memories:
                 return ""
 
-            return "User memory context:\n" + "\n".join(all_memories[:8])
-        except Exception:
+            return "User memory context:\n" + "\n".join(all_memories[:10])
+        except Exception as e:
+            print(f"Memory recall error: {e}")
             return ""
 
     @staticmethod
@@ -142,17 +182,81 @@ class ChatService:
             return "intake"
         return "general"
 
+    def _extract_entities_from_input(self, user_input: str, detected_fields: Dict) -> Dict:
+        """
+        Extract structured entities from user input.
+        
+        This provides better context than raw text for memory storage.
+        
+        Args:
+            user_input: The combined user input text
+            detected_fields: Fields detected by InputCollector
+            
+        Returns:
+            Dictionary of extracted entities
+        """
+        entities = {
+            "detected_fields": detected_fields,
+            "word_count": len(user_input.split()),
+            "has_numbers": bool(re.search(r'\d+', user_input)),
+        }
+        
+        # Extract age if present
+        age_match = re.search(r'\b(\d{1,3})\s*(year|yr|y\.?o\.?|years?\s*old)', user_input, re.IGNORECASE)
+        if age_match:
+            entities["age"] = int(age_match.group(1))
+        
+        # Extract sex if present
+        sex_match = re.search(r'\b(male|female|man|woman)\b', user_input, re.IGNORECASE)
+        if sex_match:
+            entities["sex"] = sex_match.group(1).lower()
+        
+        # Extract conditions mentioned
+        conditions = []
+        condition_patterns = [
+            (r'\bhypertension\b', 'hypertension'),
+            (r'\bdiabete\w*\b', 'diabetes'),
+            (r'\bhigh\s*blood\s*pressure\b', 'high blood pressure'),
+            (r'\bheart\s*(disease|problem|condition)\b', 'heart disease'),
+            (r'\bcholesterol\b', 'high cholesterol'),
+        ]
+        for pattern, condition in condition_patterns:
+            if re.search(pattern, user_input, re.IGNORECASE):
+                conditions.append(condition)
+        if conditions:
+            entities["conditions_mentioned"] = conditions
+        
+        return entities
+
     @track
-    def run_session(self, user_input: str, user_id: str, session_type: str = "intake") -> ChatServiceResult:
+    def run_session(
+        self,
+        user_input: str,
+        user_id: str,
+        session_type: str = "intake",
+        detected_fields: Optional[Dict] = None,
+        conversation_history: Optional[List[str]] = None,
+        use_cognee: bool = True  # NEW: Flag to use Cognee
+    ) -> ChatServiceResult:
         """
         Run the appropriate crew based on session type.
+
+        PHASE 2: Now supports Cognee graph memory when use_cognee=True.
         """
+        import os
+
+        # Check if Cognee should be used
+        use_cognee_memory = use_cognee and os.getenv("MEMORY_BACKEND", "semantic").lower() == "cognee"
+
         # Supervisor pre-processing: recall memory context
-        memory_context = self._recall_context(user_id, user_input)
+        if use_cognee_memory:
+            memory_context = self._recall_rich_context(user_id, user_input, session_type)
+        else:
+            memory_context = self._recall_context(user_id, user_input)
 
         # Auto-detect session type if the caller passed the default
         if session_type == "general":
-            has_profile = "[profile]" in memory_context
+            has_profile = "[profile]" in memory_context or "## User Profile" in memory_context
             session_type = self._detect_session_type(user_input, has_profile)
 
         if session_type == "intake":
@@ -164,36 +268,324 @@ class ChatService:
 
         result = crew.kickoff(inputs={"user_id": user_id})
 
-        # Post-processing: save key outputs to semantic memory
-        self._save_session_memories(result, user_id, session_type)
+        # Post-processing: save key outputs to memory
+        if use_cognee_memory:
+            self._save_to_cognee(
+                result=result,
+                user_id=user_id,
+                session_type=session_type,
+                user_input=user_input,
+                detected_fields=detected_fields or {},
+                conversation_history=conversation_history or []
+            )
+
+        # Always save to semantic memory as backup
+        self._save_session_memories_structured(
+            result=result,
+            user_id=user_id,
+            session_type=session_type,
+            user_input=user_input,
+            detected_fields=detected_fields or {},
+            conversation_history=conversation_history or []
+        )
 
         return ChatServiceResult(raw_result=result, user_id=user_id)
 
-    def _save_session_memories(self, result, user_id: str, session_type: str):
-        """Save profile and habit plan to semantic memory after crew completes."""
+    def _save_session_memories_structured(
+        self,
+        result,
+        user_id: str,
+        session_type: str,
+        user_input: str,
+        detected_fields: Dict,
+        conversation_history: List[str]
+    ):
+        """
+        Save structured session data to semantic memory.
+        
+        PHASE 1 FIX: Instead of truncating to 300 chars, we now:
+        1. Extract and store structured entities
+        2. Store full context as JSON
+        3. Create separate memory entries for different types of data
+        """
         try:
             memory = self._get_memory()
-            raw = str(result)
-
+            raw_output = str(result)
+            timestamp = datetime.now().isoformat()
+            
+            # Extract entities from input
+            entities = self._extract_entities_from_input(user_input, detected_fields)
+            
             if session_type == "intake":
-                # Save a profile summary from the crew output
-                pydantic_out = getattr(result, "pydantic", None)
-                if pydantic_out and hasattr(pydantic_out, "revised_response"):
-                    # SafetyReview is the last task output
-                    profile_summary = raw[:300]
-                else:
-                    profile_summary = raw[:300]
-                memory.store_memory(user_id, profile_summary, {"type": "profile"})
+                # Store structured profile data
+                profile_data = {
+                    "session_type": "intake",
+                    "entities": entities,
+                    "input_summary": user_input[:500] if len(user_input) > 500 else user_input,
+                    "output_summary": self._extract_key_points(raw_output),
+                    "timestamp": timestamp
+                }
+                
+                profile_text = json.dumps(profile_data, indent=2)
+                memory.store_memory(
+                    user_id, 
+                    profile_text, 
+                    {
+                        "type": "profile",
+                        "session_type": session_type,
+                        "timestamp": timestamp
+                    }
+                )
+            
+            # Store habit plan if present in output
+            if "habit" in raw_output.lower():
+                habits_extracted = self._extract_habits_from_output(raw_output)
+                if habits_extracted:
+                    habit_data = {
+                        "session_type": session_type,
+                        "habits": habits_extracted,
+                        "timestamp": timestamp
+                    }
+                    
+                    habit_text = json.dumps(habit_data, indent=2)
+                    memory.store_memory(
+                        user_id,
+                        habit_text,
+                        {
+                            "type": "habit_plan",
+                            "session_type": session_type,
+                            "timestamp": timestamp
+                        }
+                    )
+            
+            # Store conversation summary (for multi-turn context)
+            if conversation_history:
+                conversation_data = {
+                    "session_type": session_type,
+                    "turn_count": len(conversation_history),
+                    "messages": conversation_history[-5:],  # Last 5 messages
+                    "detected_fields": detected_fields,
+                    "timestamp": timestamp
+                }
+                
+                conversation_text = json.dumps(conversation_data, indent=2)
+                memory.store_memory(
+                    user_id,
+                    conversation_text,
+                    {
+                        "type": "conversation",
+                        "session_type": session_type,
+                        "timestamp": timestamp
+                    }
+                )
 
-            # Save habit plan summary if present in output
-            if "habits" in raw.lower() or "habit" in raw.lower():
-                # Extract a short plan summary (first 300 chars)
-                plan_summary = raw[:300] if len(raw) > 300 else raw
-                memory.store_memory(user_id, plan_summary, {"type": "habit_plan"})
+        except Exception as e:
+            print(f"Memory save error: {e}")
+            # Memory save is best-effort; don't break the session
 
-        except Exception:
-            pass  # Memory save is best-effort; don't break the session
+    def _extract_key_points(self, output: str, max_points: int = 5) -> List[str]:
+        """Extract key bullet points from agent output."""
+        key_points = []
+        
+        for line in output.split('\n'):
+            line = line.strip()
+            if line.startswith(('-', '*', '•', '1', '2', '3', '4', '5')):
+                clean_line = re.sub(r'^[-*•\d.)\s]+', '', line).strip()
+                if len(clean_line) > 10:
+                    key_points.append(clean_line)
+                    if len(key_points) >= max_points:
+                        break
+        
+        return key_points
+
+    def _extract_habits_from_output(self, output: str) -> List[Dict]:
+        """Extract habit information from agent output."""
+        habits = []
+        
+        # Try JSON extraction first
+        json_match = re.search(r'\{[\s\S]*"habits"[\s\S]*\}', output)
+        if json_match:
+            try:
+                data = json.loads(json_match.group())
+                if "habits" in data:
+                    return data["habits"]
+            except json.JSONDecodeError:
+                pass
+        
+        # Fallback: extract bullet points that look like habits
+        habit_keywords = ['walk', 'eat', 'drink', 'sleep', 'exercise', 'reduce', 
+                         'add', 'avoid', 'limit', 'increase', 'daily', 'weekly']
+        
+        for line in output.split('\n'):
+            line = line.strip()
+            if line.startswith(('-', '*', '•')) and len(line) > 10:
+                habit_text = line.lstrip('-*• ').strip()
+                if any(w in habit_text.lower() for w in habit_keywords):
+                    habits.append({
+                        "description": habit_text[:200],
+                        "extracted_at": datetime.now().isoformat()
+                    })
+        
+        return habits[:5]  # Max 5 habits
+
+    # Legacy method - calls new implementation
+    def _save_session_memories(self, result, user_id: str, session_type: str):
+        """Legacy wrapper - redirects to structured version."""
+        self._save_session_memories_structured(
+            result=result,
+            user_id=user_id,
+            session_type=session_type,
+            user_input="",
+            detected_fields={},
+            conversation_history=[]
+        )
 
     # Backward compatibility
     def run_intake_session(self, user_input: str, user_id: str) -> ChatServiceResult:
         return self.run_session(user_input, user_id, session_type="intake")
+
+    # =========================================================================
+    # PHASE 2: Cognee Integration Methods
+    # =========================================================================
+
+    def _get_cognee_memory(self):
+        """Lazy initialization for CogneeMemoryManager."""
+        if not hasattr(self, '_cognee_memory') or self._cognee_memory is None:
+            from app.core.memory.cognee_memory import get_cognee_memory
+            self._cognee_memory = get_cognee_memory()
+        return self._cognee_memory
+
+    async def _recall_rich_context_async(
+        self,
+        user_id: str,
+        user_input: str,
+        session_type: str
+    ) -> str:
+        """
+        Enhanced memory recall with graph + temporal reasoning.
+
+        This is the async version that uses Cognee's full capabilities.
+        """
+        try:
+            cognee = self._get_cognee_memory()
+
+            # Cognee provides structured context
+            context = await cognee.recall_contextual_memory(
+                user_id=user_id,
+                query=user_input,
+                lookback_days=30 if session_type == "follow_up" else 90
+            )
+
+            # Format for agent consumption
+            formatted = []
+
+            # User profile / entities
+            if context.get("entities"):
+                formatted.append("## User Profile")
+                for key, val in context["entities"].items():
+                    formatted.append(f"- {key}: {val}")
+
+            # Historical patterns
+            if context.get("temporal_patterns"):
+                formatted.append("\n## Patterns & Trends")
+                for pattern in context["temporal_patterns"]:
+                    formatted.append(f"- {pattern}")
+
+            # Causal relationships
+            if context.get("relationships"):
+                formatted.append("\n## Key Insights")
+                for rel in context["relationships"][:5]:
+                    formatted.append(f"- {rel}")
+
+            # Summary
+            if context.get("summary"):
+                formatted.append(f"\n## Summary\n{context['summary'][:500]}")
+
+            return "\n".join(formatted) if formatted else ""
+
+        except Exception as e:
+            print(f"Rich context recall failed: {e}")
+            # Fallback to basic recall
+            return self._recall_context(user_id, user_input)
+
+    def _recall_rich_context(
+        self,
+        user_id: str,
+        user_input: str,
+        session_type: str
+    ) -> str:
+        """
+        Synchronous wrapper for rich context recall.
+        """
+        try:
+            from app.core.memory.cognee_memory import run_async
+            return run_async(
+                self._recall_rich_context_async(user_id, user_input, session_type)
+            )
+        except Exception as e:
+            print(f"Rich context sync wrapper failed: {e}")
+            return self._recall_context(user_id, user_input)
+
+    async def _save_to_cognee_async(
+        self,
+        result,
+        user_id: str,
+        session_type: str,
+        user_input: str,
+        detected_fields: Dict,
+        conversation_history: List[str]
+    ):
+        """
+        Save session data to Cognee's knowledge graph.
+        """
+        try:
+            cognee = self._get_cognee_memory()
+
+            raw_output = str(result)
+
+            # Extract entities
+            entities = self._extract_entities_from_input(user_input, detected_fields)
+
+            # Store the conversation turn
+            turn_data = {
+                "user_message": user_input,
+                "agent_response": raw_output[:1000],  # Limit size
+                "extracted_entities": entities,
+                "timestamp": datetime.now().isoformat()
+            }
+
+            await cognee.store_conversation_turn(user_id, turn_data, session_type)
+
+            # Store profile if intake
+            if session_type == "intake" and entities:
+                await cognee.store_profile(user_id, entities)
+
+            # Store habits if present
+            habits = self._extract_habits_from_output(raw_output)
+            if habits:
+                await cognee.store_habit_plan(user_id, habits)
+
+        except Exception as e:
+            print(f"Cognee save error: {e}")
+            # Fallback handled by caller
+
+    def _save_to_cognee(
+        self,
+        result,
+        user_id: str,
+        session_type: str,
+        user_input: str,
+        detected_fields: Dict,
+        conversation_history: List[str]
+    ):
+        """Synchronous wrapper for Cognee save."""
+        try:
+            from app.core.memory.cognee_memory import run_async
+            run_async(
+                self._save_to_cognee_async(
+                    result, user_id, session_type,
+                    user_input, detected_fields, conversation_history
+                )
+            )
+        except Exception as e:
+            print(f"Cognee save sync wrapper failed: {e}")
