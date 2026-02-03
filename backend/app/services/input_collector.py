@@ -29,6 +29,7 @@ INTAKE_FIELDS = {
             r"\bage\b[:\s]*(\d{1,3})",
             r"\b(?:i'?m|i am|am)\s*(\d{2})\b",
             r"\b(\d{2})\s*(year|yr)s?\s*old\b",
+            r"^\s*(\d{2,3})\s*$", 
         ],
         "question": "How old are you?",
         "priority": 1,
@@ -38,6 +39,7 @@ INTAKE_FIELDS = {
         "patterns": [
             r"\b(male|female|man|woman|boy|girl)\b",
             r"\bsex[:\s]*(m|f|male|female)\b",
+            r"^\s*(m|f|male|female)\s*$",  
         ],
         "question": "Are you male or female?",
         "priority": 1,
@@ -45,22 +47,36 @@ INTAKE_FIELDS = {
     },
     "conditions": {
         "patterns": [
+            # Specific conditions mentioned
             r"\b(hypertension|diabetes|diabetic|high\s*blood\s*pressure|heart|cholesterol)\b",
-            r"\b(diagnosed|condition|suffer|have)\b.*\b(disease|illness)\b",
-            r"\bno\s+(known\s+)?(condition|disease|illness)\b",
-            r"\bhealthy\b",
+            # "I have X condition" patterns
+            r"\b(diagnosed|condition|suffer|have).{0,30}(disease|illness)\b",
+            # Negative responses - "no", "none", "don't have"
+            r"\b(no|none|nope|nah|not?\s+really)\b.{0,50}(condition|disease|illness|health\s+problem)",
+            r"\b(don'?t|do\s+not|never).{0,30}(have|had).{0,30}(condition|disease|illness|health\s+problem)",
+            r"\bno\s+(known\s+)?(condition|disease|illness|health\s+problem)",
+            # Simple negative answers
+            r"^\s*(no|none|nope|nah|not?\s+really)\s*$",
+            r"^\s*[\"']?(no|none)[\"']?\s*$",  # "none" or 'none'
+            # "None that I know of" variations
+            r"\b(none|no|not).*\b(know|aware)\b",
+            # Healthy/fine responses
+            r"\b(healthy|fine|good\s+health|no\s+problem)\b",
         ],
-        "question": "Do you have any existing health conditions? (e.g., hypertension, diabetes, heart disease — or \"none\")",
+        "question": "Do you have any existing health conditions like hypertension, diabetes, or heart disease? (You can share details or just say \"none\")",
         "priority": 1,
         "order": 3,
     },
     "family_history": {
         "patterns": [
-            r"\b(father|mother|parent|family|brother|sister|sibling)\b.*\b(history|had|has|have|diabete|hypertension|heart|stroke|pressure)\b",
-            r"\b(history|diabete|hypertension|heart|stroke|pressure)\b.*\b(father|mother|parent|family|brother|sister)\b",
+            # Matches "Relative word" + "Condition word" or vice versa
+            r"\b(father|mother|parent|family|brother|sister|sibling|uncle|aunt|grand|cousin|relative|kin|they|he|she|member|history)\b.*\b(had|has|have|history|diabete|hypertension|heart|stroke|pressure|condition|illness|disease|problem)\b",
+            r"\b(history|diabete|hypertension|heart|stroke|pressure|condition|illness|disease|problem)\b.*\b(father|mother|parent|family|brother|sister|uncle|aunt|grand|cousin|relative|kin|member)\b",
             r"\bfamily\s+history\b",
             r"\b(inherit|genetic|hereditary)\w*\b",
             r"\bno\s+family\s+history\b",
+            # Anchored "Yes/My [relative]" - very common response to the direct question
+            r"^\s*(yes\s+)?(my\s+)?(father|mother|parent|family|brother|sister|sibling|uncle|aunt|grand|cousin|relative)\b",
         ],
         "question": "Does anyone in your family have hypertension, diabetes, or heart disease? (e.g., \"my father had hypertension\" or \"no family history\")",
         "priority": 2,
@@ -71,6 +87,8 @@ INTAKE_FIELDS = {
             r"\b(smok|cigarette|tobacco|nicotine)\w*\b",
             r"\b(don'?t|do not|never)\s+smoke\b",
             r"\bnon[\s-]?smoker\b",
+            # Simple yes/no answers (when asked "Do you smoke?")
+            r"^\s*(yes|no|nope|nah|yeah|yep|daily|occasionally|sometimes|rarely|never)\s*$",
         ],
         "question": "Do you smoke? (yes/no, or how often)",
         "priority": 2,
@@ -81,6 +99,8 @@ INTAKE_FIELDS = {
             r"\b(alcohol|drink|beer|wine|spirit|liquor)\w*\b",
             r"\b(don'?t|do not|never)\s+drink\b",
             r"\bteetotal\w*\b",
+            # Simple yes/no answers (when asked "Do you drink?")
+            r"^\s*(yes|no|nope|nah|yeah|yep|occasionally|sometimes|rarely|regularly|never)\s*$",
         ],
         "question": "Do you drink alcohol? (no / occasionally / regularly)",
         "priority": 2,
@@ -176,10 +196,10 @@ FOLLOW_UP_QUESTIONS = [
 ]
 
 # Thresholds
-INTAKE_MIN_FIELDS = 4  # Minimum fields to have before running crew
-INTAKE_MAX_TURNS = 8   # Safety valve: run crew after this many turns
-FOLLOW_UP_MIN_QUESTIONS = 2  # Minimum follow-up questions answered
-FOLLOW_UP_MAX_TURNS = 5
+INTAKE_MIN_FIELDS = 6  
+INTAKE_MAX_TURNS = 12  
+FOLLOW_UP_MIN_QUESTIONS = 3 
+FOLLOW_UP_MAX_TURNS = 7  
 GENERAL_MIN_LENGTH = 15
 
 
@@ -222,7 +242,7 @@ class InputCollector:
         turn = len(messages)
 
         if session_type == "intake":
-            return self._assess_intake(combined, turn)
+            return self._assess_intake(combined, turn, messages)
         elif session_type == "follow_up":
             return self._assess_follow_up(combined, turn, user_habits or [])
         else:
@@ -241,14 +261,27 @@ class InputCollector:
     # Intake — ask one question at a time
     # ------------------------------------------------------------------
 
-    def _assess_intake(self, combined: str, turn: int) -> Dict:
+    def _assess_intake(self, combined: str, turn: int, messages: List[str] = None) -> Dict:
         detected = {}
         missing_by_order = []
+        
+        # Use individual messages for anchored pattern matching
+        individual_messages = messages or []
 
         for field, config in INTAKE_FIELDS.items():
-            found = any(
+            # Check against combined string (for patterns that span words)
+            found_in_combined = any(
                 re.search(p, combined, re.IGNORECASE) for p in config["patterns"]
             )
+            
+            # Also check each individual message (for anchored patterns like ^\s*(m|f)\s*$)
+            found_in_individual = any(
+                re.search(p, msg, re.IGNORECASE) 
+                for msg in individual_messages 
+                for p in config["patterns"]
+            )
+            
+            found = found_in_combined or found_in_individual
             detected[field] = found
             if not found:
                 missing_by_order.append((config["order"], field, config))
@@ -279,10 +312,10 @@ class InputCollector:
                 f"Let's start: {first_q}"
             )
         else:
-            # Acknowledge what we got, then ask the next missing field
-            detected_names = [f.replace("_", " ") for f, v in detected.items() if v]
-            if detected_names:
-                ack = f"Thanks! I've noted your {', '.join(detected_names[-2:])}.\n\n"
+            # Acknowledge ALL fields found so far
+            found_names = [f.replace("_", " ") for f, v in detected.items() if v]
+            if found_names:
+                ack = f"Thanks! I've noted your {', '.join(found_names)}.\n\n"
             else:
                 ack = ""
 
