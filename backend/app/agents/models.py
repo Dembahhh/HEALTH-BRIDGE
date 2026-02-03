@@ -1,5 +1,6 @@
+import json
 from typing import List, Optional, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # --- Core Models ---
 
@@ -47,3 +48,10 @@ class SafetyReview(BaseModel):
     is_safe: bool = Field(..., description="Is the content safe to show the user?")
     flagged_issues: List[str] = Field(default_factory=list, description="List of safety violations if any")
     revised_response: Optional[str] = Field(None, description="Rewritten response if edits were needed")
+
+    @field_validator("revised_response", mode="before")
+    @classmethod
+    def coerce_to_str(cls, v):
+        if isinstance(v, dict):
+            return json.dumps(v)
+        return v

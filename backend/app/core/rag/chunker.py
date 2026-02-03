@@ -40,7 +40,7 @@ class DocumentChunker:
 
     def __init__(
         self,
-        chunk_size: int = 500,
+        chunk_size: int = 2000,
         chunk_overlap: int = 50,
         min_chunk_size: int = 100,
     ):
@@ -144,10 +144,11 @@ class DocumentChunker:
                 chunks.append(chunk)
                 chunk_index += 1
             
-            # Move start with overlap
-            start = end - self.chunk_overlap
-            if start >= len(text):
-                break
+            # Move start with overlap, ensuring forward progress
+            new_start = end - self.chunk_overlap
+            if new_start <= start:
+                break  # No forward progress; remaining text too small
+            start = new_start
 
         return chunks
 
