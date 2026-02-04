@@ -34,9 +34,11 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
     Returns the decoded token dict (user info).
     """
     
-    # DEV BYPASS: If explicitly disabled in env
-    if os.getenv("SKIP_AUTH", "false").lower() == "true":
-        return {"uid": "dev_user_123", "email": "dev@example.com", "name": "Dev User"}
+   # Only allow auth skip in development environment with explicit opt-in
+    if os.getenv("ENV") == "development" and os.getenv("SKIP_AUTH", "false").lower() == "true":
+     import warnings
+    warnings.warn("⚠️ Authentication is being bypassed! Do not use in production.")
+    return {"uid": "dev_user_123", "email": "dev@example.com", "name": "Dev User"}
 
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid or missing Authorization header")
