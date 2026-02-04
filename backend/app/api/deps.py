@@ -7,6 +7,7 @@ Common dependencies for API routes (auth, database, etc.).
 from typing import Annotated
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import os
 
 # Firebase auth bearer
 security = HTTPBearer(auto_error=False)
@@ -35,10 +36,11 @@ async def get_current_user(
         
     except Exception as e:
         print(f"Auth Error: {e}")
-        # For development fallback if firebase creds fail/missing
-        if token == "dev-token": 
-             return {"uid": "dev-user", "email": "dev@example.com"}
-             
+        # Only allow dev token in development with explicit env var
+        if os.getenv("ENV") == "development" and os.getenv("ALLOW_DEV_TOKEN", "false").lower() == "true":
+            if token == os.getenv("DEV_TOKEN"):  # Read from env instead of hardcoding
+                return {"uid": "dev-user", "email": "dev@example.com"}
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
