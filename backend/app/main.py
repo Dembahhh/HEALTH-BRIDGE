@@ -7,6 +7,7 @@ Main entry point for the FastAPI application.
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.config.settings import settings
 from app.config.database import init_db, close_db
@@ -74,6 +75,22 @@ def create_app() -> FastAPI:
             "service": "health-bridge-ai",
             "version": "0.1.0",
         }
+
+    # ChromaDB health check endpoint
+    @app.get("/health/chromadb", tags=["Health"])
+    async def health_chromadb():
+        """Check ChromaDB connectivity."""
+        try:
+            from app.core.memory.semantic_memory import SemanticMemory
+            memory = SemanticMemory()
+            # Try a simple operation
+            stats = memory.collection.count()
+            return {"status": "healthy", "documents": stats}
+        except Exception as e:
+            return JSONResponse(
+                status_code=503,
+                content={"status": "unhealthy", "error": str(e)}
+            )
 
     # Root endpoint
     @app.get("/", tags=["Root"])

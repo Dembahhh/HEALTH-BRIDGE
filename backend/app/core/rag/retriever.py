@@ -6,6 +6,7 @@ Implements the RAG retrieval layer as specified:
 - Vector search with metadata filters (condition, topic)
 - Returns top-k relevant chunks
 - Supports pre-filtering by condition/topic
+- Environment-based client selection for production scalability
 """
 
 from typing import List, Dict, Any, Optional
@@ -14,6 +15,12 @@ import os
 from app.config.settings import settings
 from app.core.rag.embeddings import get_embedding_client
 from app.core.rag.chunker import Chunk
+
+# ChromaDB configuration with environment-based client selection
+CHROMA_MODE = os.getenv("CHROMA_MODE", "persistent")  # "persistent" or "http"
+CHROMA_HOST = os.getenv("CHROMA_HOST", "localhost")
+CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
+CHROMA_AUTH_TOKEN = os.getenv("CHROMA_AUTH_TOKEN")
 
 
 class VectorRetriever:
@@ -43,13 +50,32 @@ class VectorRetriever:
 
         persist_dir = persist_directory or settings.CHROMA_PERSIST_DIR
 
-        # Ensure directory exists
-        os.makedirs(persist_dir, exist_ok=True)
+        # Ensure directory exists (for persistent mode)
+        if CHROMA_MODE != "http":
+            os.makedirs(persist_dir, exist_ok=True)
 
-        self.client = chromadb.PersistentClient(
-            path=persist_dir,
-            settings=ChromaSettings(anonymized_telemetry=False),
-        )
+        # Environment-based client selection for production scalability
+        if CHROMA_MODE == "http":
+            # Production: HTTP mode for multi-worker support
+            chroma_settings = ChromaSettings(
+                anonymized_telemetry=False,
+                chroma_client_auth_provider="token" if CHROMA_AUTH_TOKEN else None,
+                chroma_client_auth_credentials=CHROMA_AUTH_TOKEN
+            )
+            self.client = chromadb.HttpClient(
+                host=CHROMA_HOST,
+                port=CHROMA_PORT,
+                settings=chroma_settings
+            )
+        else:
+            # Development: Persistent mode (local file)
+            self.client = chromadb.PersistentClient(
+                path=persist_dir,
+                settings=ChromaSettings(
+                    anonymized_telemetry=False,
+                    allow_reset=True  # Allow clearing in dev
+                )
+            )
 
         self.collection_name = collection_name
 

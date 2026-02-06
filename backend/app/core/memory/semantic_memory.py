@@ -5,8 +5,12 @@ from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 import os
 
-# Use a persistent path for ChromaDB
+# ChromaDB configuration with environment-based client selection
+CHROMA_MODE = os.getenv("CHROMA_MODE", "persistent")  # "persistent" or "http"
 CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", "./data/chroma_memory")
+CHROMA_HOST = os.getenv("CHROMA_HOST", "localhost")
+CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
+CHROMA_AUTH_TOKEN = os.getenv("CHROMA_AUTH_TOKEN")
 
 
 class SemanticMemory:
@@ -21,7 +25,28 @@ class SemanticMemory:
     """
 
     def __init__(self):
-        self.client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
+        # Environment-based client selection for production scalability
+        if CHROMA_MODE == "http":
+            # Production: HTTP mode for multi-worker support
+            settings = Settings(
+                anonymized_telemetry=False,
+                chroma_client_auth_provider="token" if CHROMA_AUTH_TOKEN else None,
+                chroma_client_auth_credentials=CHROMA_AUTH_TOKEN
+            )
+            self.client = chromadb.HttpClient(
+                host=CHROMA_HOST,
+                port=CHROMA_PORT,
+                settings=settings
+            )
+        else:
+            # Development: Persistent mode (local file)
+            self.client = chromadb.PersistentClient(
+                path=CHROMA_DB_PATH,
+                settings=Settings(
+                    anonymized_telemetry=False,
+                    allow_reset=True  # Allow clearing in dev
+                )
+            )
 
         from app.core.rag.embeddings import get_embedding_client
 
