@@ -28,11 +28,15 @@ class SemanticMemory:
         # Environment-based client selection for production scalability
         if CHROMA_MODE == "http":
             # Production: HTTP mode for multi-worker support
-            settings = Settings(
-                anonymized_telemetry=False,
-                chroma_client_auth_provider="token" if CHROMA_AUTH_TOKEN else None,
-                chroma_client_auth_credentials=CHROMA_AUTH_TOKEN
-            )
+            settings_dict = {
+                "anonymized_telemetry": False
+            }
+            # Only add auth settings if token is provided
+            if CHROMA_AUTH_TOKEN:
+                settings_dict["chroma_client_auth_provider"] = "chromadb.auth.token_authn.TokenAuthClientProvider"
+                settings_dict["chroma_client_auth_credentials"] = CHROMA_AUTH_TOKEN
+            
+            settings = Settings(**settings_dict)
             self.client = chromadb.HttpClient(
                 host=CHROMA_HOST,
                 port=CHROMA_PORT,
