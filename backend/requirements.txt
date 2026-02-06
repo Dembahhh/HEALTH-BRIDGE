@@ -10,6 +10,7 @@ beanie>=1.25.0
 # Vector DB & RAG
 chromadb>=0.4.22
 sentence-transformers>=2.3.0
+# Cognee>=0.1.0
 
 # Agent framework
 crewai>=0.80.0
@@ -31,3 +32,5 @@ opik
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
 httpx>=0.26.0
+
+pytest-asyncio>=0.21.0

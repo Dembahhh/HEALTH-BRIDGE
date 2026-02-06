@@ -59,6 +59,12 @@ class VectorRetriever:
         from chromadb.utils.embedding_functions import EmbeddingFunction
 
         class _NoOpEmbedding(EmbeddingFunction):
+            def __init__(self):
+                pass  # Required by newer ChromaDB
+
+            def name(self) -> str:
+                return "noop_embedding"
+
             def __call__(self, input):
                 return [[0.0] * 384 for _ in input]
 

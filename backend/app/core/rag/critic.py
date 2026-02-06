@@ -23,11 +23,30 @@ class CorrectiveRAGCritic:
     def __init__(self, confidence_threshold: float = 0.6):
         """
         Initialize the critic.
-        
+
         Args:
             confidence_threshold: Minimum confidence score to accept answer
         """
         self.confidence_threshold = confidence_threshold
+
+    @staticmethod
+    def _stem_word(word: str) -> str:
+        """Simple suffix-stripping stemmer (no external deps).
+        Strips common English suffixes so 'smoking' matches 'smoke', etc."""
+        if len(word) <= 3:
+            return word
+        # Order matters: try longest suffixes first
+        suffixes = [
+            "ation", "tion", "sion", "ment", "ness", "ance", "ence",
+            "ings", "ing", "ated", "ous", "ive", "ful", "less",
+            "able", "ible",
+            "ed", "er", "est", "ly", "al",
+            "es", "s",
+        ]
+        for suffix in suffixes:
+            if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+                return word[:-len(suffix)]
+        return word
 
     def extract_key_claims(self, answer: str) -> List[str]:
         """
@@ -67,34 +86,40 @@ class CorrectiveRAGCritic:
             Tuple of (is_supported, confidence, supporting_source)
         """
         claim_lower = claim.lower()
-        claim_keywords = set(claim_lower.split())
-        
+        claim_words = set(claim_lower.split())
+
         # Remove common words
-        stopwords = {"the", "a", "an", "is", "are", "was", "were", "be", "been", 
-                     "to", "of", "and", "in", "that", "for", "with", "on", "at"}
-        claim_keywords -= stopwords
-        
+        stopwords = {"the", "a", "an", "is", "are", "was", "were", "be", "been",
+                     "to", "of", "and", "in", "that", "for", "with", "on", "at",
+                     "it", "its", "this", "or", "by", "can", "may", "should",
+                     "not", "no", "but", "also", "has", "have", "had"}
+        claim_words -= stopwords
+
+        # Apply stemming for better matching ("smoking" -> "smok", "smoke" -> "smok")
+        claim_stems = {self._stem_word(w) for w in claim_words}
+
         best_match_score = 0.0
         best_source = ""
-        
+
         for doc in retrieved_docs:
             content = doc.get("content", "").lower()
-            content_words = set(content.split())
-            
-            # Calculate keyword overlap
-            overlap = claim_keywords & content_words
-            if claim_keywords:
-                match_score = len(overlap) / len(claim_keywords)
+            content_words = set(content.split()) - stopwords
+            content_stems = {self._stem_word(w) for w in content_words}
+
+            # Calculate overlap on stemmed words
+            overlap = claim_stems & content_stems
+            if claim_stems:
+                match_score = len(overlap) / len(claim_stems)
             else:
                 match_score = 0.0
-            
+
             if match_score > best_match_score:
                 best_match_score = match_score
                 source = doc.get("metadata", {}).get("source", "Unknown")
                 best_source = source
-        
-        is_supported = best_match_score >= 0.4  # At least 40% keyword match
-        
+
+        is_supported = best_match_score >= 0.4  # At least 40% stemmed keyword match
+
         return is_supported, best_match_score, best_source
 
     def review_answer(

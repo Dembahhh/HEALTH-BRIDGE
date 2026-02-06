@@ -12,12 +12,17 @@ This is the main entry point for the chat interface.
 """
 
 import json
+import logging
+import re
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from app.core.config import tracked
 from app.services.conversation_state import ConversationState, FieldConfidence
 from app.services.input_collector import InputCollector
+
+logger = logging.getLogger(__name__)
 from app.services.llm_extractor import get_extractor, FullExtractionResult
 from app.services.question_generator import get_question_generator
 from app.services.pattern_detector import get_pattern_detector, DetectedPattern
@@ -135,15 +140,16 @@ class SessionManager:
         self._welcome_shown = True
         return welcome
     
+    @tracked(name="process_message", tags=["session"])
     def process_message(self, message: str) -> SessionResult:
         """
         Process a user message and return appropriate response.
-        
+
         This is the main entry point for each conversation turn.
-        
+
         Args:
             message: User's message
-            
+
         Returns:
             SessionResult with response and state information
         """
@@ -163,14 +169,10 @@ class SessionManager:
         # Check for urgent symptoms
         if self.state.has_urgent_symptoms():
             return self._handle_urgent_symptoms()
-        
-        # Assess readiness
-        assessment = self.collector.assess(
-            messages=self.state.get_user_messages(),
-            session_type=self.session_type,
-            user_habits=self.user_habits
-        )
-        
+
+        # Assess readiness using existing state (avoids redundant re-extraction)
+        assessment = self._assess_readiness()
+
         if assessment["ready"]:
             return self._prepare_for_crew(assessment)
         else:
@@ -206,6 +208,93 @@ class SessionManager:
         for symptom in extraction.urgent_symptoms:
             self.state.add_urgent_flag(symptom)
     
+    def _assess_readiness(self) -> Dict:
+        """Assess readiness using the existing conversation state.
+
+        This avoids the redundant re-extraction that ``self.collector.assess()``
+        performs by working directly with fields already stored in ``self.state``.
+
+        Returns:
+            Dict with ``ready`` bool and supporting metadata.
+        """
+        from app.services.input_collector import (
+            INTAKE_MIN_FIELDS,
+            INTAKE_MAX_TURNS,
+            FOLLOW_UP_MIN_QUESTIONS,
+            FOLLOW_UP_MAX_TURNS,
+            GENERAL_MIN_LENGTH,
+        )
+
+        fields_collected = self.state.count_collected_fields()
+        turn = self.state.turn_count
+        combined = self.state.get_combined_input()
+
+        if self.session_type == "intake":
+            has_critical = self.state.has_critical_fields()
+            enough = has_critical and fields_collected >= INTAKE_MIN_FIELDS
+            safety_valve = turn >= INTAKE_MAX_TURNS
+
+            if enough or safety_valve:
+                return {
+                    "ready": True,
+                    "combined_input": combined,
+                    "detected_fields": self.state.get_detected_fields_dict(),
+                    "turn": turn,
+                    "collected_values": {
+                        k: v.value for k, v in self.state.collected_fields.items()
+                    },
+                    "implied_fields": self.state.implied_fields,
+                }
+            return {
+                "ready": False,
+                "detected_fields": self.state.get_detected_fields_dict(),
+                "turn": turn,
+            }
+
+        if self.session_type == "follow_up":
+            enough = fields_collected >= FOLLOW_UP_MIN_QUESTIONS
+            safety_valve = turn >= FOLLOW_UP_MAX_TURNS
+            long_enough = len(combined.split()) >= 20
+
+            if enough or safety_valve or long_enough:
+                return {
+                    "ready": True,
+                    "combined_input": combined,
+                    "detected_fields": self.state.get_detected_fields_dict(),
+                    "turn": turn,
+                }
+            return {
+                "ready": False,
+                "detected_fields": self.state.get_detected_fields_dict(),
+                "turn": turn,
+            }
+
+        # General session
+        has_question = bool(
+            re.search(r"\?|how|what|why|when|can|should|is it", combined, re.IGNORECASE)
+        )
+        has_topic = bool(
+            re.search(
+                r"\b(diet|exercise|blood\s*pressure|diabetes|hypertension|heart|weight|habit|health|symptom)\w*\b",
+                combined,
+                re.IGNORECASE,
+            )
+        )
+        long_enough = len(combined.strip()) >= GENERAL_MIN_LENGTH
+
+        if (has_question or has_topic or long_enough) or turn >= 2:
+            return {
+                "ready": True,
+                "combined_input": combined,
+                "detected_fields": {"has_question": has_question, "has_topic": has_topic},
+                "turn": turn,
+            }
+        return {
+            "ready": False,
+            "detected_fields": {},
+            "turn": turn,
+        }
+
     def _handle_urgent_symptoms(self) -> SessionResult:
         """Handle detection of urgent symptoms."""
         symptoms = self.state.urgent_flags
@@ -434,6 +523,93 @@ Once you've received medical care, we can continue with your health plan."""
         self.interventions_generated = []
         self.crew_result = None
         self._welcome_shown = False
+
+    def should_run_full_crew(self) -> Tuple[bool, str]:
+        """
+        Determine if the full agent crew should run, or if we can skip it.
+
+        This prevents wasteful agent calls for:
+        - Simple clarification responses
+        - Insufficient data for meaningful recommendations
+        - Repeated identical requests
+
+        Returns:
+            Tuple of (should_run: bool, reason: str)
+        """
+        # Minimum data thresholds by session type
+        min_fields = {
+            "intake": 4,      # Need at least age, sex, + 2 lifestyle factors
+            "follow_up": 1,   # Need at least some progress update
+            "general": 1      # Any question is fine
+        }
+
+        collected_count = len(self.state.collected_fields)
+        required = min_fields.get(self.session_type, 1)
+
+        # Check 1: Enough data collected?
+        if collected_count < required:
+            return False, f"Insufficient data: {collected_count}/{required} fields collected"
+
+        # Check 2: For intake, ensure we have critical fields
+        if self.session_type == "intake":
+            critical_fields = {"age", "sex"}
+            collected_names = set(self.state.collected_fields.keys())
+            missing_critical = critical_fields - collected_names
+
+            if missing_critical:
+                return False, f"Missing critical fields: {missing_critical}"
+
+        # Check 3: For follow-up, ensure there's actual progress to discuss
+        if self.session_type == "follow_up":
+            messages = self.state.get_user_messages()
+            if len(messages) < 2:
+                return False, "Need more context for follow-up analysis"
+
+            # Check if messages contain substance (not just "yes/no")
+            total_words = sum(len(m.split()) for m in messages)
+            if total_words < 10:
+                return False, "Responses too brief for meaningful analysis"
+
+        # Check 4: Avoid repeated runs with same data (basic cache check)
+        # This is a simple check - in production you'd use a proper cache
+        context_hash = hash(frozenset(
+            (k, str(v.value)) for k, v in self.state.collected_fields.items()
+        ))
+
+        if hasattr(self, '_last_crew_hash') and self._last_crew_hash == context_hash:
+            return False, "Data unchanged since last analysis"
+
+        # Mark this hash for next time
+        self._last_crew_hash = context_hash
+
+        return True, "Ready for full analysis"
+
+    def get_quick_response(self, reason: str) -> str:
+        """
+        Generate a quick response when full crew isn't needed.
+
+        Args:
+            reason: Why crew was skipped
+
+        Returns:
+            Appropriate response message
+        """
+        if "Insufficient data" in reason:
+            return "I need a bit more information before I can provide personalized recommendations. " + \
+                   self.question_gen.get_next_question(self.state, self.session_type)[0]
+
+        if "Missing critical" in reason:
+            return "To give you accurate health guidance, I'll need to know your age and sex. Could you share those?"
+
+        if "too brief" in reason:
+            return "Could you tell me a bit more about how things have been going? " + \
+                   "For example, what habits have you been working on, and how are they going?"
+
+        if "unchanged" in reason:
+            return "Based on what you've shared, my previous recommendations still apply. " + \
+                   "Is there anything specific you'd like me to address or clarify?"
+
+        return "Let me help you with that. Could you tell me more about your question?"
 
 
 # Factory function
