@@ -4,19 +4,25 @@ Chat API Routes
 Endpoints for chat sessions and messaging.
 """
 
-from typing import Optional, List
-from uuid import uuid4
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
+import logging
+from typing import Optional
+from fastapi import APIRouter, HTTPException, Request, status
+from pydantic import BaseModel, Field
 import asyncio
 import functools
 
 from app.api.deps import CurrentUser
 from app.models.chat import ChatSession, ChatMessage
 from app.models.plan import HabitPlan, Habit
+from app.core.rate_limit import limiter
 from datetime import datetime, timedelta
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+# Valid session types
+_VALID_SESSION_TYPES = {"intake", "follow_up", "general"}
 
 
 def get_user_id(current_user) -> str:
@@ -29,7 +35,11 @@ def get_user_id(current_user) -> str:
 # Request/Response Models
 class CreateSessionRequest(BaseModel):
     """Request to create a new chat session."""
-    session_type: str = "general"  # intake, follow_up, general
+    session_type: str = Field(
+        default="general",
+        pattern=r"^(intake|follow_up|general)$",
+        description="Session type: intake, follow_up, or general",
+    )
 
 
 class CreateSessionResponse(BaseModel):
@@ -41,8 +51,13 @@ class CreateSessionResponse(BaseModel):
 
 class SendMessageRequest(BaseModel):
     """Request to send a message."""
-    session_id: str
-    content: str
+    session_id: str = Field(..., min_length=1, max_length=100)
+    content: str = Field(
+        ...,
+        min_length=1,
+        max_length=5000,
+        description="Message content (1-5000 characters)",
+    )
 
 
 class SendMessageResponse(BaseModel):
@@ -62,8 +77,10 @@ class MessageItem(BaseModel):
 
 # Endpoints
 @router.post("/session", response_model=CreateSessionResponse)
+@limiter.limit("10/minute")
 async def create_session(
-    request: CreateSessionRequest,
+    request_body: CreateSessionRequest,
+    request: Request,
     current_user: CurrentUser,
 ):
     """
@@ -79,21 +96,23 @@ async def create_session(
     # Create session in database
     session = ChatSession(
         user_id=user_id,
-        session_type=request.session_type,
+        session_type=request_body.session_type,
         status="active"
     )
     await session.create()
 
     return CreateSessionResponse(
         session_id=str(session.id),
-        session_type=request.session_type,
-        message=f"Session created. Type: {request.session_type}",
+        session_type=request_body.session_type,
+        message=f"Session created. Type: {request_body.session_type}",
     )
 
 
 @router.post("/message", response_model=SendMessageResponse)
+@limiter.limit("20/minute")
 async def send_message(
-    request: SendMessageRequest,
+    request_body: SendMessageRequest,
+    request: Request,
     current_user: CurrentUser,
 ):
     """
@@ -106,7 +125,7 @@ async def send_message(
     user_id = get_user_id(current_user)
 
     # Verify session exists and belongs to user
-    session = await ChatSession.get(request.session_id)
+    session = await ChatSession.get(request_body.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     if session.user_id != user_id:
@@ -114,10 +133,10 @@ async def send_message(
 
     # Save user message
     user_message = ChatMessage(
-        session_id=request.session_id,
+        session_id=request_body.session_id,
         user_id=user_id,
         role="user",
-        content=request.content
+        content=request_body.content
     )
     await user_message.create()
 
@@ -131,7 +150,7 @@ async def send_message(
             None,
             functools.partial(
                 chat_service.run_session,
-                request.content,
+                request_body.content,
                 user_id,
                 session.session_type
             )
@@ -142,7 +161,7 @@ async def send_message(
 
         # Save assistant message
         assistant_message = ChatMessage(
-            session_id=request.session_id,
+            session_id=request_body.session_id,
             user_id=user_id,
             role="assistant",
             content=response_content,
@@ -194,20 +213,31 @@ async def send_message(
         )
 
     except Exception as e:
-        # Save error as system message for debugging
+        # Log full error server-side for debugging
+        logger.error(
+            "Chat error for user=%s session=%s: %s",
+            user_id, request_body.session_id, e, exc_info=True,
+        )
+        # Save sanitized error as system message
         error_message = ChatMessage(
-            session_id=request.session_id,
+            session_id=request_body.session_id,
             user_id=user_id,
             role="system",
-            content=f"Error: {str(e)}"
+            content="An internal error occurred while processing your message."
         )
         await error_message.create()
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return generic message to client — no stack traces
+        raise HTTPException(
+            status_code=500,
+            detail="An error occurred while processing your message. Please try again.",
+        )
 
 
 @router.get("/session/{session_id}/messages")
+@limiter.limit("30/minute")
 async def get_session_messages(
     session_id: str,
+    request: Request,
     current_user: CurrentUser,
 ):
     """Get all messages in a session."""
@@ -239,7 +269,9 @@ async def get_session_messages(
 
 
 @router.get("/sessions")
+@limiter.limit("30/minute")
 async def list_sessions(
+    request: Request,
     current_user: CurrentUser,
 ):
     """List all sessions for the current user."""

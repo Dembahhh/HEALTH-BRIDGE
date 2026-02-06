@@ -1,55 +1,17 @@
-import os
-from typing import Optional
-from fastapi import Header, HTTPException, Depends
+"""
+Auth utilities (DEPRECATED - use app.api.deps.get_current_user for API routes).
 
-# Try importing firebase_admin, but gracefully fail if not installed/configured
-try:
-    import firebase_admin
-    from firebase_admin import auth, credentials
-    FIREBASE_AVAILABLE = True
-except ImportError:
-    FIREBASE_AVAILABLE = False
+This module is only kept for backwards compatibility.
+All API routes should import from app.api.deps instead.
+"""
 
-# Initialize Firebase (singleton pattern)
-if FIREBASE_AVAILABLE:
-    try:
-        # Check if already initialized
-        if not firebase_admin._apps:
-            # Look for checking credentials path env var
-            cred_path = os.getenv("FIREBASE_CREDENTIALS_PATH")
-            if cred_path and os.path.exists(cred_path):
-                cred = credentials.Certificate(cred_path)
-                firebase_admin.initialize_app(cred)
-            else:
-                # Default logic or warning
-                print("Warning: Firebase Credentials not found. Auth may fail unless skipped.")
-                # For hackathon/testing, maybe initialize with no creds (relies on Google Application Default Credentials)
-                # firebase_admin.initialize_app()
-    except Exception as e:
-        print(f"Firebase Init Error: {e}")
+import warnings
 
-async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
-    """
-    Dependency to verify the Firebase ID token from the Authorization header.
-    Returns the decoded token dict (user info).
-    """
-    # Only allow auth skip in development environment with explicit opt-in
-    if os.getenv("ENV") == "development" and os.getenv("SKIP_AUTH", "false").lower() == "true":
-        import warnings
-        warnings.warn("⚠️ Authentication is being bypassed! Do not use in production.")
-        return {"uid": "dev_user_123", "email": "dev@example.com", "name": "Dev User"}
+warnings.warn(
+    "app.services.auth is deprecated. Use app.api.deps.CurrentUser for API routes.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid or missing Authorization header")
-
-    token = authorization.split("Bearer ")[1]
-
-    if not FIREBASE_AVAILABLE:
-        raise HTTPException(status_code=500, detail="Firebase Admin SDK not installed.")
-
-    try:
-        decoded_token = auth.verify_id_token(token)
-        return decoded_token
-    except Exception as e:
-        print(f"Auth Error: {e}")
-        raise HTTPException(status_code=401, detail="Invalid authentication token")
+# Re-export from the canonical location
+from app.api.deps import get_current_user, CurrentUser  # noqa: F401
