@@ -13,14 +13,15 @@ from typing import List, Dict, Any, Optional
 import os
 
 from app.config.settings import settings
+from app.config.chroma import (
+    CHROMA_MODE,
+    CHROMA_HOST,
+    CHROMA_PORT,
+    CHROMA_AUTH_TOKEN,
+    CHROMA_AUTH_PROVIDER_CLASS
+)
 from app.core.rag.embeddings import get_embedding_client
 from app.core.rag.chunker import Chunk
-
-# ChromaDB configuration with environment-based client selection
-CHROMA_MODE = os.getenv("CHROMA_MODE", "persistent")  # "persistent" or "http"
-CHROMA_HOST = os.getenv("CHROMA_HOST", "localhost")
-CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
-CHROMA_AUTH_TOKEN = os.getenv("CHROMA_AUTH_TOKEN")
 
 
 class VectorRetriever:
@@ -62,7 +63,7 @@ class VectorRetriever:
             }
             # Only add auth settings if token is provided
             if CHROMA_AUTH_TOKEN:
-                settings_dict["chroma_client_auth_provider"] = "chromadb.auth.token_authn.TokenAuthClientProvider"
+                settings_dict["chroma_client_auth_provider"] = CHROMA_AUTH_PROVIDER_CLASS
                 settings_dict["chroma_client_auth_credentials"] = CHROMA_AUTH_TOKEN
             
             chroma_settings = ChromaSettings(**settings_dict)

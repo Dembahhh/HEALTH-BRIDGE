@@ -11,6 +11,9 @@ services:
       - ANONYMIZED_TELEMETRY=False
       - CHROMA_SERVER_AUTH_PROVIDER=token
       - CHROMA_SERVER_AUTH_CREDENTIALS_PROVIDER=env
+      # SECURITY: CHROMA_AUTH_TOKEN must be set in .env for production!
+      # Generate a secure token with: openssl rand -hex 32
+      # Never commit tokens to git or use default values in production
       - CHROMA_SERVER_AUTH_CREDENTIALS=${CHROMA_AUTH_TOKEN}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
