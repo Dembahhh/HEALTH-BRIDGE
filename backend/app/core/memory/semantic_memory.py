@@ -3,14 +3,14 @@ from chromadb.config import Settings
 from chromadb.utils import embedding_functions
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
-import os
-
-# ChromaDB configuration with environment-based client selection
-CHROMA_MODE = os.getenv("CHROMA_MODE", "persistent")  # "persistent" or "http"
-CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", "./data/chroma_memory")
-CHROMA_HOST = os.getenv("CHROMA_HOST", "localhost")
-CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
-CHROMA_AUTH_TOKEN = os.getenv("CHROMA_AUTH_TOKEN")
+from app.config.chroma import (
+    CHROMA_MODE,
+    CHROMA_DB_PATH,
+    CHROMA_HOST,
+    CHROMA_PORT,
+    CHROMA_AUTH_TOKEN,
+    CHROMA_AUTH_PROVIDER_CLASS
+)
 
 
 class SemanticMemory:
@@ -33,7 +33,7 @@ class SemanticMemory:
             }
             # Only add auth settings if token is provided
             if CHROMA_AUTH_TOKEN:
-                settings_dict["chroma_client_auth_provider"] = "chromadb.auth.token_authn.TokenAuthClientProvider"
+                settings_dict["chroma_client_auth_provider"] = CHROMA_AUTH_PROVIDER_CLASS
                 settings_dict["chroma_client_auth_credentials"] = CHROMA_AUTH_TOKEN
             
             settings = Settings(**settings_dict)

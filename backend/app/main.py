@@ -79,7 +79,13 @@ def create_app() -> FastAPI:
     # ChromaDB health check endpoint
     @app.get("/health/chromadb", tags=["Health"])
     async def health_chromadb():
-        """Check ChromaDB connectivity."""
+        """
+        Check ChromaDB connectivity.
+        
+        Note: This creates a new SemanticMemory instance on each call.
+        For production with frequent health checks, consider implementing
+        a cached connection test or singleton pattern.
+        """
         try:
             from app.core.memory.semantic_memory import SemanticMemory
             memory = SemanticMemory()
