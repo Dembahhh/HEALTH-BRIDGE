@@ -13,7 +13,8 @@ export default function DashboardPage() {
   const { user } = useSelector((state) => state.auth);
   const { data: profile, loading } = useSelector((state) => state.profile);
   const [isEditing, setIsEditing] = useState(false);
-  const [assessmentCount, setAssessmentCount] = useState(null);
+  const [assessmentCount, setAssessmentCount] = useState(0);
+  const [assessmentsLoading, setAssessmentsLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -26,8 +27,10 @@ export default function DashboardPage() {
         const response = await chatApi.getSessions();
         setAssessmentCount(response.data.sessions.length);
       } catch (error) {
-        console.error('Failed to fetch assessments:', error);
+        console.error('Failed to fetch assessment count. Displaying default message:', error);
         setAssessmentCount(0);
+      } finally {
+        setAssessmentsLoading(false);
       }
     };
     
@@ -233,7 +236,7 @@ export default function DashboardPage() {
             {[
               { icon: Activity, label: 'Activity', value: profile.activity_level || 'Not set', color: 'var(--color-primary)' },
               { icon: User, label: 'Age Group', value: profile.age_band || 'Not set', color: 'var(--color-accent)' },
-              { icon: MessageSquare, label: 'Assessments', value: assessmentCount === null ? '...' : assessmentCount === 0 ? 'Start your first' : `${assessmentCount} completed`, color: 'var(--color-accent-dark)' },
+              { icon: MessageSquare, label: 'Assessments', value: assessmentsLoading ? '...' : assessmentCount === 0 ? 'Start your first' : `${assessmentCount} completed`, color: 'var(--color-accent-dark)' },
             ].map((stat, idx) => (
               <div key={idx} className="rounded-xl p-5"
                 style={{
