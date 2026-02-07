@@ -9,11 +9,15 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.api.deps import CurrentUser
+from app.models.profile import HealthProfile, Constraints
 
 router = APIRouter()
 
 
-# Request/Response Models
+# ---------------------------------------------------------------------------
+# Request / Response Models
+# ---------------------------------------------------------------------------
+
 class ConstraintsModel(BaseModel):
     """SDOH constraints."""
     exercise_safety: str = "safe"
@@ -25,6 +29,7 @@ class ConstraintsModel(BaseModel):
 
 class ProfileResponse(BaseModel):
     """Health profile response."""
+    photo_url: Optional[str] = None
     age_band: Optional[str] = None
     sex: Optional[str] = None
     family_history_hypertension: bool = False
@@ -41,6 +46,7 @@ class ProfileResponse(BaseModel):
 
 class UpdateProfileRequest(BaseModel):
     """Request to update profile."""
+    photo_url: Optional[str] = None
     age_band: Optional[str] = None
     sex: Optional[str] = None
     family_history_hypertension: Optional[bool] = None
@@ -53,21 +59,38 @@ class UpdateProfileRequest(BaseModel):
     constraints: Optional[ConstraintsModel] = None
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _uid(current_user) -> str:
+    if isinstance(current_user, dict):
+        return current_user.get("uid")
+    return getattr(current_user, "firebase_uid", str(current_user.id))
+
+
+async def _get_or_create_profile(uid: str) -> HealthProfile:
+    """Fetch existing profile or create a blank one."""
+    profile = await HealthProfile.find_one(HealthProfile.user_id == uid)
+    if not profile:
+        profile = HealthProfile(user_id=uid)
+        await profile.insert()
+    return profile
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
+# ---------------------------------------------------------------------------
+
 @router.get("", response_model=ProfileResponse)
 async def get_profile(current_user: CurrentUser):
     """Get current user's health profile."""
-    from app.models.profile import HealthProfile
-    
-    # current_user is a Beanie Document (User) or dict depending on auth
-    # If using Beanie User model, it has .id or .firebase_uid
-    uid = current_user.firebase_uid if hasattr(current_user, 'firebase_uid') else current_user.get('uid')
-    
+    uid = _uid(current_user)
     profile = await HealthProfile.find_one(HealthProfile.user_id == uid)
-    
+
     if not profile:
         return ProfileResponse()
-        
+
     return ProfileResponse(**profile.model_dump())
 
 
@@ -77,41 +100,29 @@ async def update_profile(
     current_user: CurrentUser,
 ):
     """Update user's health profile."""
-    from app.models.profile import HealthProfile
-    
-    uid = current_user.firebase_uid if hasattr(current_user, 'firebase_uid') else current_user.get('uid')
-    
-    profile = await HealthProfile.find_one(HealthProfile.user_id == uid)
-    
-    if not profile:
-        profile = HealthProfile(user_id=uid)
-        
-    # Update fields
+    uid = _uid(current_user)
+    profile = await _get_or_create_profile(uid)
+
     update_data = request.model_dump(exclude_unset=True)
-    print(f"📝 Updating profile for {uid} with: {update_data}")
-    
     for key, value in update_data.items():
-        if key == "constraints":
-            # Determine if constraints are partial or full? 
-            # For now, let's assume we replace the constraints object if provided
-            # Or better, update its fields if it's a dict. 
-            # Since ConstraintsModel is pydantic, we can just assign it if the types match.
-            # But Beanie expects the embedded model.
-            setattr(profile, key, value)
-        else:
-            setattr(profile, key, value)
-            
+        setattr(profile, key, value)
+
+    profile.update_timestamp()
     await profile.save()
-    print("✅ Profile saved successfully")
-    
+
     return ProfileResponse(**profile.model_dump())
 
 
 @router.get("/constraints", response_model=ConstraintsModel)
 async def get_constraints(current_user: CurrentUser):
     """Get user's SDOH constraints."""
-    # TODO: Retrieve constraints from database (Phase 7)
-    return ConstraintsModel()
+    uid = _uid(current_user)
+    profile = await HealthProfile.find_one(HealthProfile.user_id == uid)
+
+    if not profile or not profile.constraints:
+        return ConstraintsModel()
+
+    return ConstraintsModel(**profile.constraints.model_dump())
 
 
 @router.put("/constraints", response_model=ConstraintsModel)
@@ -120,5 +131,11 @@ async def update_constraints(
     current_user: CurrentUser,
 ):
     """Update user's SDOH constraints."""
-    # TODO: Update constraints in database (Phase 7)
-    return constraints
+    uid = _uid(current_user)
+    profile = await _get_or_create_profile(uid)
+
+    profile.constraints = Constraints(**constraints.model_dump())
+    profile.update_timestamp()
+    await profile.save()
+
+    return ConstraintsModel(**profile.constraints.model_dump())

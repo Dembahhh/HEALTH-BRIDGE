@@ -1,5 +1,3 @@
-import chromadb
-from chromadb.config import Settings
 from chromadb.utils import embedding_functions
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
@@ -123,7 +121,7 @@ class SemanticMemory:
 
         except Exception as e:
             # If dedup check fails, proceed with normal insert
-            print(f"Deduplication check failed: {e}")
+            logger.warning("Deduplication check failed: %s", e)
 
         memory_id = str(uuid.uuid4())
         self.collection.add(
@@ -236,7 +234,7 @@ class SemanticMemory:
                 limit=limit * 2  # Fetch extra to account for sorting
             )
         except Exception as e:
-            print(f"Error fetching memories: {e}")
+            logger.error("Error fetching memories: %s", e)
             return []
 
         # Convert to list of dicts with metadata
@@ -303,7 +301,7 @@ class SemanticMemory:
             self.collection.delete(ids=[memory_id])
             return True
         except Exception as e:
-            print(f"Error deleting memory {memory_id}: {e}")
+            logger.error("Error deleting memory %s: %s", memory_id, e)
             return False
 
     def clear_user_memories(self, user_id: str) -> int:
@@ -324,7 +322,7 @@ class SemanticMemory:
                     self.collection.delete(ids=ids_to_delete)
                 return len(ids_to_delete)
         except Exception as e:
-            print(f"Error clearing memories for {user_id}: {e}")
+            logger.error("Error clearing memories for %s: %s", user_id, e)
         return 0
 
     def clear_session_memories(self, user_id: str, session_id: str) -> int:
@@ -347,7 +345,7 @@ class SemanticMemory:
                 self.collection.delete(ids=results["ids"])
                 return len(results["ids"])
         except Exception as e:
-            print(f"Error clearing session memories: {e}")
+            logger.error("Error clearing session memories: %s", e)
         return 0
 
     def cleanup_old_memories(self, user_id: str, older_than_hours: float) -> int:
@@ -378,5 +376,5 @@ class SemanticMemory:
                 self.collection.delete(ids=ids_to_delete)
             return len(ids_to_delete)
         except Exception as e:
-            print(f"Error cleaning old memories: {e}")
+            logger.error("Error cleaning old memories: %s", e)
         return 0

@@ -219,8 +219,10 @@ MEMORY_BACKEND=semantic   # or "cognee" for graph-style memory
 # CORS
 CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 
-# Auth (dev only)
-SKIP_AUTH=true
+# Auth (dev only - NEVER use in production)
+# SKIP_AUTH=true           # Uncomment ONLY for local development without Firebase
+# ALLOW_DEV_TOKEN=false
+# DEV_TOKEN=
 ```
 
 ### Frontend Environment Variables

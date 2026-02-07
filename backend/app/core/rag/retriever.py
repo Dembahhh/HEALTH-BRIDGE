@@ -41,15 +41,12 @@ class VectorRetriever:
     ):
         """
         Initialize the retriever with ChromaDB.
-        
+
         Args:
             collection_name: Name of the ChromaDB collection
-            persist_directory: Directory for persistent storage
+            persist_directory: Directory for persistent storage (ignored in HTTP mode)
         """
-        import chromadb
-        from chromadb.config import Settings as ChromaSettings
-
-        persist_dir = persist_directory or settings.CHROMA_PERSIST_DIR
+        from app.core.chroma_client import get_chroma_client
 
         # Ensure directory exists (for persistent mode)
         if CHROMA_MODE != "http":

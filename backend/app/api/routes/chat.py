@@ -4,32 +4,34 @@ Chat API Routes
 Endpoints for chat sessions and messaging.
 """
 
+import logging
 from typing import Optional, List
 from uuid import uuid4
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
-import asyncio
-import functools
+from fastapi import APIRouter, HTTPException, Request, status
+from pydantic import BaseModel, Field
+from datetime import datetime, timedelta
 
 from app.api.deps import CurrentUser
 from app.models.chat import ChatSession, ChatMessage
 from app.models.plan import HabitPlan, Habit
-from datetime import datetime, timedelta
+from app.core.rate_limit import limiter
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-def get_user_id(current_user) -> str:
-    """Extract user ID from current_user (dict or User object)."""
-    if isinstance(current_user, dict):
-        return current_user.get("uid", "unknown")
-    return getattr(current_user, "firebase_uid", str(current_user.id))
+# ---------------------------------------------------------------------------
+# Request / Response Models
+# ---------------------------------------------------------------------------
 
-
-# Request/Response Models
 class CreateSessionRequest(BaseModel):
     """Request to create a new chat session."""
-    session_type: str = "general"  # intake, follow_up, general
+    session_type: str = Field(
+        default="general",
+        pattern=r"^(intake|follow_up|general)$",
+        description="Session type: intake, follow_up, or general",
+    )
 
 
 class CreateSessionResponse(BaseModel):
@@ -41,8 +43,13 @@ class CreateSessionResponse(BaseModel):
 
 class SendMessageRequest(BaseModel):
     """Request to send a message."""
-    session_id: str
-    content: str
+    session_id: str = Field(..., min_length=1, max_length=100)
+    content: str = Field(
+        ...,
+        min_length=1,
+        max_length=5000,
+        description="Message content (1-5000 characters)",
+    )
 
 
 class SendMessageResponse(BaseModel):
@@ -50,113 +57,126 @@ class SendMessageResponse(BaseModel):
     message_id: str
     content: str
     agent_name: Optional[str] = None
-    habit_plan_id: Optional[str] = None
 
 
 class MessageItem(BaseModel):
     """A single message in history."""
     role: str
     content: str
+    agent_name: Optional[str] = None
     created_at: str
 
 
+class SessionItem(BaseModel):
+    """A session in the list."""
+    session_id: str
+    session_type: str
+    is_active: bool
+    created_at: str
+    updated_at: str
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _uid(current_user) -> str:
+    """Extract user id from the current_user dependency (dict or User)."""
+    if isinstance(current_user, dict):
+        return current_user.get("uid")
+    return getattr(current_user, "firebase_uid", str(current_user.id))
+
+
+async def _persist_message(
+    session_id: str,
+    role: str,
+    content: str,
+    agent_name: Optional[str] = None,
+) -> ChatMessage:
+    """Save a chat message to MongoDB and return it."""
+    msg = ChatMessage(
+        session_id=session_id,
+        role=role,
+        content=content,
+        agent_name=agent_name,
+    )
+    await msg.insert()
+    return msg
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
+# ---------------------------------------------------------------------------
+
 @router.post("/session", response_model=CreateSessionResponse)
+@limiter.limit("10/minute")
 async def create_session(
-    request: CreateSessionRequest,
+    request_body: CreateSessionRequest,
+    request: Request,
     current_user: CurrentUser,
 ):
-    """
-    Create a new chat session.
+    """Create a new chat session and persist it."""
+    uid = _uid(current_user)
+    session_id = str(uuid4())
 
-    Session types:
-    - intake: First-time health assessment
-    - follow_up: Returning user check-in
-    - general: Educational questions
-    """
-    user_id = get_user_id(current_user)
-
-    # Create session in database
     session = ChatSession(
-        user_id=user_id,
-        session_type=request.session_type,
-        status="active"
+        user_id=uid,
+        session_id=session_id,
+        session_type=request_body.session_type,
     )
-    await session.create()
+    await session.insert()
 
     return CreateSessionResponse(
-        session_id=str(session.id),
-        session_type=request.session_type,
-        message=f"Session created. Type: {request.session_type}",
+        session_id=session_id,
+        session_type=request_body.session_type,
+        message=f"Session created. Type: {request_body.session_type}",
     )
 
 
 @router.post("/message", response_model=SendMessageResponse)
+@limiter.limit("20/minute")
 async def send_message(
-    request: SendMessageRequest,
+    request_body: SendMessageRequest,
+    request: Request,
     current_user: CurrentUser,
 ):
     """
-    Send a message and get AI response.
-
-    This triggers the multi-agent pipeline.
+    Send a message and get AI response via the full multi-agent pipeline.
     """
-    from app.services.chat import ChatService
+    from app.agents import get_orchestrator
 
-    user_id = get_user_id(current_user)
+    uid = _uid(current_user)
+    orchestrator = get_orchestrator()
 
-    # Verify session exists and belongs to user
-    session = await ChatSession.get(request.session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    if session.user_id != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized")
+    # Persist the user message
+    await _persist_message(request_body.session_id, "user", request_body.content)
 
-    # Save user message
-    user_message = ChatMessage(
-        session_id=request.session_id,
-        user_id=user_id,
-        role="user",
-        content=request.content
+    # Look up the session to get its type
+    session = await ChatSession.find_one(
+        ChatSession.session_id == request_body.session_id
     )
-    await user_message.create()
+    session_type = session.session_type if session else "general"
 
     try:
-        # Initialize service and execute agent crew
-        chat_service = ChatService()
-
-        # Run synchronous CrewAI in thread pool to not block async
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None,
-            functools.partial(
-                chat_service.run_session,
-                request.content,
-                user_id,
-                session.session_type
-            )
+        result = await orchestrator.process_message(
+            user_id=uid,
+            session_id=request_body.session_id,
+            message=request_body.content,
+            session_type=session_type,
         )
 
-        # Extract response content
-        response_content = str(result)
+        agent_name = result.get("agent_name", "supervisor")
+        content = result["content"]
 
-        # Save assistant message
-        assistant_message = ChatMessage(
-            session_id=request.session_id,
-            user_id=user_id,
-            role="assistant",
-            content=response_content,
-            agent_name="HealthBridge Crew"
+        # Persist the assistant message
+        saved = await _persist_message(
+            request_body.session_id, "assistant", content, agent_name
         )
-        await assistant_message.create()
 
-        # Save HabitPlan if habits were extracted
-        habit_plan_id = None
-        if hasattr(result, 'habits') and result.habits:
+        # Auto-save HabitPlan if the crew extracted habits
+        if hasattr(result, "habits") and result.get("habits"):
             habits = []
-            for h in result.habits:
-                # Map from agent schema (action/trigger/rationale)
-                # to plan schema (title/description/category)
+            for h in result["habits"]:
                 title = h.get("title") or h.get("action", "Habit")
                 description = h.get("description") or h.get("rationale", "")
                 category = h.get("category") or h.get("trigger", "general")
@@ -165,62 +185,116 @@ async def send_message(
                     description=description,
                     frequency=h.get("frequency", "daily"),
                     category=category,
-                    difficulty=h.get("difficulty", "easy")
+                    difficulty=h.get("difficulty", "easy"),
                 ))
+            if habits:
+                plan = HabitPlan(
+                    user_id=uid,
+                    week_number=1,
+                    start_date=datetime.utcnow(),
+                    end_date=datetime.utcnow() + timedelta(weeks=4),
+                    habits=habits,
+                    status="active",
+                )
+                await plan.insert()
 
-            plan = HabitPlan(
-                user_id=user_id,
-                week_number=1,
-                start_date=datetime.utcnow(),
-                end_date=datetime.utcnow() + timedelta(weeks=4),
-                habits=habits,
-                status="active"
-            )
-            await plan.create()
-            habit_plan_id = str(plan.id)
-
-            # Link plan to session
-            session.habit_plan_id = habit_plan_id
-
-        # Update session timestamp
-        session.update_timestamp()
-        await session.save()
+        # Touch session timestamp
+        if session:
+            session.update_timestamp()
+            await session.save()
 
         return SendMessageResponse(
-            message_id=str(assistant_message.id),
-            content=response_content,
-            agent_name="HealthBridge Crew",
-            habit_plan_id=habit_plan_id
+            message_id=str(saved.id),
+            content=content,
+            agent_name=agent_name,
+        )
+    except Exception as e:
+        logger.error(
+            "Chat error for user=%s session=%s: %s",
+            uid, request_body.session_id, e, exc_info=True,
         )
 
-    except Exception as e:
-        # Save error as system message for debugging
-        error_message = ChatMessage(
-            session_id=request.session_id,
-            user_id=user_id,
-            role="system",
-            content=f"Error: {str(e)}"
+        fallback = "I'm sorry, I encountered an issue processing your message. Please try again."
+        saved = await _persist_message(
+            request_body.session_id, "assistant", fallback, "system"
         )
-        await error_message.create()
-        raise HTTPException(status_code=500, detail=str(e))
+        return SendMessageResponse(
+            message_id=str(saved.id),
+            content=fallback,
+            agent_name="system",
+        )
+
+
+@router.post("/quick", response_model=SendMessageResponse)
+@limiter.limit("30/minute")
+async def send_quick_message(
+    request_body: SendMessageRequest,
+    request: Request,
+    current_user: CurrentUser,
+):
+    """
+    Quick single-turn response (lighter pipeline, faster).
+    """
+    from app.agents import get_orchestrator
+
+    uid = _uid(current_user)
+    orchestrator = get_orchestrator()
+
+    # Persist the user message
+    await _persist_message(request_body.session_id, "user", request_body.content)
+
+    try:
+        result = await orchestrator.quick_message(
+            user_id=uid,
+            session_id=request_body.session_id,
+            message=request_body.content,
+        )
+
+        agent_name = result.get("agent_name", "quick")
+        content = result["content"]
+
+        saved = await _persist_message(
+            request_body.session_id, "assistant", content, agent_name
+        )
+
+        # Touch session timestamp
+        session = await ChatSession.find_one(
+            ChatSession.session_id == request_body.session_id
+        )
+        if session:
+            session.update_timestamp()
+            await session.save()
+
+        return SendMessageResponse(
+            message_id=str(saved.id),
+            content=content,
+            agent_name=agent_name,
+        )
+    except Exception as e:
+        logger.error(
+            "Quick chat error for user=%s session=%s: %s",
+            uid, request_body.session_id, e, exc_info=True,
+        )
+
+        fallback = "I'm sorry, I encountered an issue. Please try again."
+        saved = await _persist_message(
+            request_body.session_id, "assistant", fallback, "system"
+        )
+        return SendMessageResponse(
+            message_id=str(saved.id),
+            content=fallback,
+            agent_name="system",
+        )
 
 
 @router.get("/session/{session_id}/messages")
+@limiter.limit("30/minute")
 async def get_session_messages(
     session_id: str,
+    request: Request,
     current_user: CurrentUser,
 ):
-    """Get all messages in a session."""
-    user_id = get_user_id(current_user)
-
-    # Verify session exists and belongs to user
-    session = await ChatSession.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    if session.user_id != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized")
-
-    # Retrieve messages
+    """Get all messages in a session from the database."""
     messages = await ChatMessage.find(
         ChatMessage.session_id == session_id
     ).sort("+created_at").to_list()
@@ -229,35 +303,38 @@ async def get_session_messages(
         "session_id": session_id,
         "messages": [
             MessageItem(
-                role=msg.role,
-                content=msg.content,
-                created_at=msg.created_at.isoformat()
-            )
-            for msg in messages
-        ]
+                role=m.role,
+                content=m.content,
+                agent_name=m.agent_name,
+                created_at=m.created_at.isoformat(),
+            ).model_dump()
+            for m in messages
+        ],
     }
 
 
 @router.get("/sessions")
-async def list_sessions(
+@limiter.limit("30/minute")
+async def get_sessions(
+    request: Request,
     current_user: CurrentUser,
 ):
-    """List all sessions for the current user."""
-    user_id = get_user_id(current_user)
+    """List all chat sessions for the current user."""
+    uid = _uid(current_user)
 
     sessions = await ChatSession.find(
-        ChatSession.user_id == user_id
+        ChatSession.user_id == uid
     ).sort("-created_at").to_list()
 
     return {
         "sessions": [
-            {
-                "session_id": str(s.id),
-                "session_type": s.session_type,
-                "status": s.status,
-                "created_at": s.created_at.isoformat(),
-                "updated_at": s.updated_at.isoformat()
-            }
+            SessionItem(
+                session_id=s.session_id,
+                session_type=s.session_type,
+                is_active=s.is_active,
+                created_at=s.created_at.isoformat(),
+                updated_at=s.updated_at.isoformat(),
+            ).model_dump()
             for s in sessions
-        ]
+        ],
     }
