@@ -9,11 +9,14 @@ Production-ready extraction with multiple fallback layers:
 This ensures the system NEVER fails to understand reasonable user inputs.
 """
 
+import logging
 import os
 import json
 import re
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -82,15 +85,15 @@ class LLMExtractor:
                         if response.text:
                             self.llm_available = True
                             self.llm_type = "gemini"
-                            print(f"✅ LLM Extractor: Using {model_name}")
+                            logger.info("LLM Extractor: Using %s", model_name)
                             return
                     except Exception as model_error:
                         continue
-                
-                print("⚠️ All Gemini models failed")
-                
+
+                logger.warning("All Gemini models failed")
+
             except Exception as e:
-                print(f"⚠️ Gemini init failed: {e}")
+                logger.warning("Gemini init failed: %s", e)
         
         # Try OpenAI
         openai_key = os.getenv("OPENAI_API_KEY")
@@ -106,21 +109,21 @@ class LLMExtractor:
                 )
                 self.llm_available = True
                 self.llm_type = "openai"
-                print("✅ LLM Extractor: Using OpenAI")
+                logger.info("LLM Extractor: Using OpenAI")
                 return
             except Exception as e:
-                print(f"⚠️ OpenAI init failed: {e}")
-        
-        print("ℹ️ LLM unavailable, using semantic + regex")
+                logger.warning("OpenAI init failed: %s", e)
+
+        logger.info("LLM unavailable, using semantic + regex")
     
     def _init_semantic_matcher(self):
         """Initialize semantic matcher."""
         try:
             from app.services.semantic_matcher import get_semantic_matcher
             self.semantic_matcher = get_semantic_matcher(use_embeddings=True)
-            print("✅ Semantic Matcher: Initialized")
+            logger.info("Semantic Matcher: Initialized")
         except Exception as e:
-            print(f"⚠️ Semantic matcher init failed: {e}")
+            logger.warning("Semantic matcher init failed: %s", e)
             self.semantic_matcher = None
     
     def extract_all(
@@ -153,7 +156,7 @@ class LLMExtractor:
                     if max_confidence >= 0.7 or is_simple:
                         return result
             except Exception as e:
-                print(f"Semantic extraction failed: {e}")
+                logger.warning("Semantic extraction failed: %s", e)
 
         # Layer 2: Try LLM only for complex/ambiguous inputs
         if self.llm_available and self.use_llm and not is_simple:
@@ -162,7 +165,7 @@ class LLMExtractor:
                 if result.fields:
                     return result
             except Exception as e:
-                print(f"LLM extraction failed: {e}")
+                logger.warning("LLM extraction failed: %s", e)
 
         # Layer 3: Regex fallback (always available)
         return self._extract_with_regex(message, last_question_field, urgent)

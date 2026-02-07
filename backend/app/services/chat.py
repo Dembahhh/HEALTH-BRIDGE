@@ -158,7 +158,7 @@ class ChatService:
 
             return "User memory context:\n" + "\n".join(all_memories[:10])
         except Exception as e:
-            print(f"Memory recall error: {e}")
+            logger.warning("Memory recall error: %s", e)
             return ""
 
     @staticmethod
@@ -433,7 +433,7 @@ class ChatService:
                 )
 
         except Exception as e:
-            print(f"Memory save error: {e}")
+            logger.warning("Memory save error: %s", e)
             # Memory save is best-effort; don't break the session
 
     def _extract_key_points(self, output: str, max_points: int = 5) -> List[str]:
@@ -557,7 +557,7 @@ class ChatService:
             return "\n".join(formatted) if formatted else ""
 
         except Exception as e:
-            print(f"Rich context recall failed: {e}")
+            logger.warning("Rich context recall failed: %s", e)
             # Fallback to basic recall
             return self._recall_context(user_id, user_input)
 
@@ -576,7 +576,7 @@ class ChatService:
                 self._recall_rich_context_async(user_id, user_input, session_type)
             )
         except Exception as e:
-            print(f"Rich context sync wrapper failed: {e}")
+            logger.warning("Rich context sync wrapper failed: %s", e)
             return self._recall_context(user_id, user_input)
 
     async def _save_to_cognee_async(
@@ -619,7 +619,7 @@ class ChatService:
                 await cognee.store_habit_plan(user_id, habits)
 
         except Exception as e:
-            print(f"Cognee save error: {e}")
+            logger.warning("Cognee save error: %s", e)
             # Fallback handled by caller
 
     def _save_to_cognee(
@@ -641,7 +641,7 @@ class ChatService:
                 )
             )
         except Exception as e:
-            print(f"Cognee save sync wrapper failed: {e}")
+            logger.warning("Cognee save sync wrapper failed: %s", e)
 
     # =========================================================================
     # PHASE 5: Pattern Detection Integration
