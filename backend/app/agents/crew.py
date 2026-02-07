@@ -2,11 +2,16 @@
 Crew Assembly
 
 Assembles agents and tasks into Crews for different session types.
+Includes ParallelIntakeOrchestrator for concurrent Risk + SDOH execution.
 """
 
-from crewai import Crew, Process
+import os
+from crewai import Crew, Process, Task
 from .agents import HealthBridgeAgents
 from . import tasks
+from .models import RiskAssessment, Constraints, HabitPlan, SafetyReview
+
+_verbose = os.getenv("AGENT_VERBOSE", "false").lower() == "true"
 
 
 class HealthBridgeCrew:
@@ -34,7 +39,8 @@ class HealthBridgeCrew:
             agents=[intake, risk, context, coach, safety],
             tasks=[t_intake, t_risk, t_context, t_plan, t_safety],
             process=Process.sequential,
-            verbose=True
+            verbose=_verbose,
+            tracing=True,
         )
 
     def follow_up_crew(self, user_input: str, user_id: str, memory_context: str = "") -> Crew:
@@ -52,7 +58,8 @@ class HealthBridgeCrew:
             agents=[context, coach, safety],
             tasks=[t_context, t_plan, t_safety],
             process=Process.sequential,
-            verbose=True
+            verbose=_verbose,
+            tracing=True,
         )
 
     def general_crew(self, user_input: str, user_id: str, memory_context: str = "") -> Crew:
@@ -76,6 +83,103 @@ class HealthBridgeCrew:
             agents=[risk, safety],
             tasks=[t_risk, t_safety],
             process=Process.sequential,
-            verbose=True,
+            verbose=_verbose,
             tracing=True
+        )
+
+
+class ParallelIntakeOrchestrator:
+    """Splits intake pipeline into 3 stages for parallel Risk + SDOH execution.
+
+    Stage 1 (sequential): Intake -> Profile extraction
+    Stage 2 (parallel):   Risk assessment + SDOH constraints (independent)
+    Stage 3 (sequential): Habit plan -> Safety review
+
+    Usage:
+        orch = ParallelIntakeOrchestrator()
+        profile_result = orch.stage1_intake(user_input, user_id, ctx).kickoff()
+        # run stage2_risk and stage2_sdoh concurrently
+        risk, sdoh = await asyncio.gather(
+            loop.run_in_executor(None, orch.stage2_risk(profile_str, ctx).kickoff),
+            loop.run_in_executor(None, orch.stage2_sdoh(user_input, user_id, ctx).kickoff),
+        )
+        final = orch.stage3_plan_safety(risk_str, sdoh_str, user_id).kickoff()
+    """
+
+    def __init__(self):
+        self._agents = HealthBridgeAgents()
+
+    def stage1_intake(self, user_input: str, user_id: str, memory_context: str = "") -> Crew:
+        """Stage 1: Extract user profile from input."""
+        intake = self._agents.intake_agent()
+        t_intake = tasks.intake_task(intake, user_input, user_id, memory_context)
+        return Crew(
+            agents=[intake],
+            tasks=[t_intake],
+            process=Process.sequential,
+            verbose=_verbose,
+        )
+
+    def stage2_risk(self, profile_output: str, memory_context: str = "") -> Crew:
+        """Stage 2a: Risk assessment based on extracted profile."""
+        risk = self._agents.risk_guideline_agent()
+        t_risk = Task(
+            description=(
+                f"Using the following user profile, estimate hypertension and "
+                f"diabetes risk bands based on WHO guidelines.\n"
+                f"User Profile:\n{profile_output}\n\n"
+                f"Use the 'Retrieve Guidelines' tool to look up relevant risk tables. "
+                f"You can specify condition='hypertension' or condition='diabetes' to focus your search.\n"
+                f"Do NOT diagnose. Only estimate risk bands: low, moderate, or high.\n"
+                f"\n{memory_context}"
+            ),
+            agent=risk,
+            expected_output="Structured RiskAssessment JSON matching the schema",
+            output_pydantic=RiskAssessment,
+        )
+        return Crew(
+            agents=[risk],
+            tasks=[t_risk],
+            process=Process.sequential,
+            verbose=_verbose,
+        )
+
+    def stage2_sdoh(self, user_input: str, user_id: str, memory_context: str = "") -> Crew:
+        """Stage 2b: SDOH constraints analysis (independent of profile)."""
+        context = self._agents.context_sdoh_agent()
+        t_context = tasks.context_sdoh_task(context, user_input, user_id, memory_context)
+        return Crew(
+            agents=[context],
+            tasks=[t_context],
+            process=Process.sequential,
+            verbose=_verbose,
+        )
+
+    def stage3_plan_safety(
+        self, risk_output: str, sdoh_output: str, user_id: str
+    ) -> Crew:
+        """Stage 3: Generate habit plan + safety review using combined results."""
+        coach = self._agents.habit_coach_agent()
+        safety = self._agents.safety_policy_agent()
+
+        t_plan = Task(
+            description=(
+                f"Create a realistic 4-week tiny-habit plan based on the following:\n\n"
+                f"## Risk Assessment\n{risk_output}\n\n"
+                f"## SDOH Constraints\n{sdoh_output}\n\n"
+                f"Keep habits small, affordable, and safe for the user's context.\n"
+                f"Use user_id '{user_id}' when recalling user memories for personalization.\n"
+                f"Include 1-3 habits max with clear triggers and rationale."
+            ),
+            agent=coach,
+            expected_output="Structured HabitPlan JSON matching the schema",
+            output_pydantic=HabitPlan,
+        )
+        t_safety = tasks.safety_review_task(safety, context_tasks=[t_plan])
+
+        return Crew(
+            agents=[coach, safety],
+            tasks=[t_plan, t_safety],
+            process=Process.sequential,
+            verbose=_verbose,
         )

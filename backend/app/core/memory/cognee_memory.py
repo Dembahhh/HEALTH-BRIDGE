@@ -13,9 +13,13 @@ The interface remains the same, so no other code changes needed.
 """
 
 import json
-from typing import List, Dict, Optional, Any
-from datetime import datetime
+import logging
+import re
+from typing import List, Dict, Optional, Any, Tuple
+from datetime import datetime, timedelta
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -99,12 +103,17 @@ class CogneeMemoryManager:
         """
         try:
             memory = self._get_memory()
-            
+
             # Build structured text for storage
             timestamp = turn_data.get("timestamp", datetime.now().isoformat())
             user_msg = turn_data.get("user_message", "")
             entities = turn_data.get("extracted_entities", {})
-            
+
+            # Enrich with regex-based entity extraction
+            extracted = self._extract_entities(user_msg)
+            if extracted:
+                entities["auto_extracted"] = extracted
+
             # Create a structured document
             doc = {
                 "session_type": session_type,
@@ -112,7 +121,7 @@ class CogneeMemoryManager:
                 "entities": entities,
                 "timestamp": timestamp
             }
-            
+
             memory.store_memory(
                 user_id=user_id,
                 text=json.dumps(doc),
@@ -122,11 +131,11 @@ class CogneeMemoryManager:
                     "timestamp": timestamp
                 }
             )
-            
+
             return True
-            
+
         except Exception as e:
-            print(f"Store error: {e}")
+            logger.error("Failed to store conversation turn: %s", e)
             return False
     
     def recall_contextual_memory(
@@ -162,17 +171,39 @@ class CogneeMemoryManager:
                 user_id, limit=2, memory_type="profile"
             )
             
-            # Extract entities from results
-            entities = {}
-            for mem in results + profile_memories:
+            # Extract entities from results (JSON-stored + regex-based)
+            entities: Dict[str, Any] = {}
+            all_extracted: Dict[str, List[str]] = {}
+            all_memories = results + profile_memories
+
+            for mem in all_memories:
                 text = mem.get("text", "")
+                # Try JSON-stored entities first
                 try:
                     parsed = json.loads(text)
                     if "entities" in parsed:
                         entities.update(parsed["entities"])
                 except (json.JSONDecodeError, TypeError):
                     pass
-            
+                # Regex-based entity extraction on raw text
+                extracted = self._extract_entities(text)
+                for cat, items in extracted.items():
+                    existing = all_extracted.get(cat, [])
+                    for item in items:
+                        if item not in existing:
+                            existing.append(item)
+                    all_extracted[cat] = existing
+
+            # Merge regex-extracted entities into result
+            if all_extracted:
+                entities["extracted"] = all_extracted
+
+            # Build relationships from extracted entities
+            relationships = self._build_relationships(all_extracted)
+
+            # Detect temporal patterns from memory timestamps
+            temporal_patterns = self._detect_temporal_patterns(all_memories)
+
             # Build summary
             summary_parts = []
             for r in results[:3]:
@@ -180,17 +211,17 @@ class CogneeMemoryManager:
                 if len(text) > 100:
                     text = text[:100] + "..."
                 summary_parts.append(text)
-            
+
             return {
                 "entities": entities,
-                "relationships": [],  # Placeholder for Cognee
-                "temporal_patterns": [],  # Placeholder for Cognee
+                "relationships": relationships,
+                "temporal_patterns": temporal_patterns,
                 "summary": " | ".join(summary_parts) if summary_parts else "",
                 "raw_results": results
             }
             
         except Exception as e:
-            print(f"Recall error: {e}")
+            logger.error("Failed to recall contextual memory: %s", e)
             return {
                 "entities": {},
                 "relationships": [],
@@ -225,17 +256,7 @@ class CogneeMemoryManager:
                 text = r.get("text", "")
                 timestamp = r.get("metadata", {}).get("timestamp", "")
                 
-                # Try to parse status from text
-                status = "mentioned"
-                text_lower = text.lower()
-                if "started" in text_lower or "began" in text_lower:
-                    status = "started"
-                elif "stopped" in text_lower or "quit" in text_lower:
-                    status = "stopped"
-                elif "struggling" in text_lower or "difficult" in text_lower:
-                    status = "struggling"
-                elif "doing well" in text_lower or "keeping up" in text_lower:
-                    status = "active"
+                status = self._detect_habit_status(text)
                 
                 timeline.append({
                     "index": i + 1,
@@ -254,7 +275,7 @@ class CogneeMemoryManager:
             return timeline
             
         except Exception as e:
-            print(f"Timeline error: {e}")
+            logger.error("Failed to get habit timeline: %s", e)
             return []
     
     def store_profile(
@@ -316,6 +337,202 @@ class CogneeMemoryManager:
             return True
         except Exception:
             return False
+
+    # -----------------------------------------------------------------
+    # Phase 11: Entity extraction, relationship, and temporal helpers
+    # -----------------------------------------------------------------
+
+    # Regex patterns for health entity extraction
+    _ENTITY_PATTERNS: Dict[str, List[Tuple[str, str]]] = {
+        "condition": [
+            (r"\bhypertension\b", "hypertension"),
+            (r"\bhigh\s*blood\s*pressure\b", "hypertension"),
+            (r"\bdiabete\w*\b", "diabetes"),
+            (r"\bheart\s*(disease|problem|attack|condition|failure)\b", "heart disease"),
+            (r"\bcholesterol\b", "high cholesterol"),
+            (r"\bstroke\b", "stroke"),
+            (r"\bkidney\s*(disease|problem|failure)\b", "kidney disease"),
+            (r"\basthma\b", "asthma"),
+            (r"\bcopd\b", "COPD"),
+            (r"\bobes\w+\b", "obesity"),
+        ],
+        "demographic": [
+            (r"\b(\d{1,3})\s*(?:years?\s*old|y/?o)\b", "age"),
+            (r"\b(male|female|man|woman)\b", "sex"),
+        ],
+        "lifestyle": [
+            (r"\bsmok\w+\b", "smoking"),
+            (r"\balcohol\b|\bdrink\w*\b", "alcohol"),
+            (r"\bexercis\w+\b|\bwalk\w*\b|\bgym\b|\bsport\w*\b", "exercise"),
+            (r"\bdiet\w*\b|\bvegetarian\b|\bvegan\b", "diet"),
+        ],
+        "family": [
+            (r"\b(father|mother|dad|mom|parent|brother|sister|grandpa|grandma|uncle|aunt)\b", "family_member"),
+        ],
+    }
+
+    _HABIT_STATUS_KEYWORDS: Dict[str, List[str]] = {
+        "started": ["started", "began", "beginning", "new habit", "just started"],
+        "active": ["doing well", "keeping up", "on track", "going great", "improved"],
+        "struggling": ["struggling", "difficult", "hard", "failing", "can't keep"],
+        "stopped": ["stopped", "quit", "gave up", "abandoned", "no longer"],
+        "resumed": ["resumed", "back on", "started again", "picked up again"],
+    }
+
+    def _extract_entities(self, text: str) -> Dict[str, List[str]]:
+        """Extract health-related entities from text using regex patterns.
+
+        Args:
+            text: Raw text to extract entities from.
+
+        Returns:
+            Dict mapping entity category to list of matched entity labels.
+        """
+        entities: Dict[str, List[str]] = {}
+        text_lower = text.lower()
+
+        for category, patterns in self._ENTITY_PATTERNS.items():
+            found: List[str] = []
+            for pattern, label in patterns:
+                if re.search(pattern, text_lower):
+                    if label not in found:
+                        found.append(label)
+            if found:
+                entities[category] = found
+
+        return entities
+
+    def _detect_habit_status(self, text: str) -> str:
+        """Detect the status of a habit from text content.
+
+        Args:
+            text: Text describing habit progress.
+
+        Returns:
+            One of: "started", "active", "struggling", "stopped",
+            "resumed", or "mentioned" as fallback.
+        """
+        text_lower = text.lower()
+        for status, keywords in self._HABIT_STATUS_KEYWORDS.items():
+            if any(kw in text_lower for kw in keywords):
+                return status
+        return "mentioned"
+
+    def _detect_temporal_patterns(
+        self,
+        memories: List[Dict[str, Any]],
+    ) -> List[str]:
+        """Detect temporal patterns from a list of timestamped memories.
+
+        Looks for:
+        - Recurring conditions mentioned across sessions
+        - Habit adherence trends (improving, declining)
+        - Gaps in engagement
+
+        Args:
+            memories: List of memory dicts, each with optional ``text``
+                and ``metadata.timestamp`` fields.
+
+        Returns:
+            List of human-readable pattern descriptions.
+        """
+        patterns: List[str] = []
+
+        # Collect timestamps
+        timestamps: List[datetime] = []
+        condition_mentions: Dict[str, int] = {}
+        habit_statuses: List[Tuple[str, str]] = []  # (timestamp, status)
+
+        for mem in memories:
+            text = mem.get("text", "")
+            ts_str = mem.get("metadata", {}).get("timestamp", "")
+
+            # Parse timestamp
+            ts = None
+            if ts_str:
+                try:
+                    ts = datetime.fromisoformat(ts_str)
+                    timestamps.append(ts)
+                except (ValueError, TypeError):
+                    pass
+
+            # Count condition mentions
+            entities = self._extract_entities(text)
+            for cond in entities.get("condition", []):
+                condition_mentions[cond] = condition_mentions.get(cond, 0) + 1
+
+            # Track habit statuses
+            status = self._detect_habit_status(text)
+            if status != "mentioned" and ts_str:
+                habit_statuses.append((ts_str, status))
+
+        # Pattern: recurring conditions
+        for cond, count in condition_mentions.items():
+            if count >= 2:
+                patterns.append(
+                    f"{cond} mentioned {count} times across sessions"
+                )
+
+        # Pattern: engagement gaps
+        if len(timestamps) >= 2:
+            timestamps.sort()
+            max_gap = max(
+                (timestamps[i + 1] - timestamps[i]).days
+                for i in range(len(timestamps) - 1)
+            )
+            if max_gap > 14:
+                patterns.append(
+                    f"Engagement gap of {max_gap} days detected"
+                )
+
+        # Pattern: habit trend
+        if len(habit_statuses) >= 2:
+            recent = [s for _, s in sorted(habit_statuses)[-3:]]
+            positive = {"active", "started", "resumed"}
+            negative = {"struggling", "stopped"}
+            if all(s in positive for s in recent):
+                patterns.append("Positive habit adherence trend")
+            elif all(s in negative for s in recent):
+                patterns.append("Declining habit adherence trend")
+
+        return patterns
+
+    def _build_relationships(
+        self,
+        entities: Dict[str, List[str]],
+    ) -> List[str]:
+        """Build simple relationship descriptions from extracted entities.
+
+        For example, if both a family member and a condition are found,
+        infer a family history relationship.
+
+        Args:
+            entities: Output of ``_extract_entities``.
+
+        Returns:
+            List of relationship description strings.
+        """
+        relationships: List[str] = []
+
+        family_members = entities.get("family", [])
+        conditions = entities.get("condition", [])
+        lifestyle_factors = entities.get("lifestyle", [])
+
+        # Family-condition relationships
+        for member in family_members:
+            for cond in conditions:
+                relationships.append(
+                    f"Family history: {member} linked to {cond}"
+                )
+
+        # Lifestyle-condition relationships
+        for factor in lifestyle_factors:
+            for cond in conditions:
+                relationships.append(
+                    f"Lifestyle factor '{factor}' relevant to {cond}"
+                )
+
+        return relationships
 
 
 # Singleton instance

@@ -69,11 +69,15 @@ class ConversationState:
     sessions_completed: int = 0
     last_question_field: Optional[str] = None
     urgent_flags: List[str] = field(default_factory=list)
+    clarification_attempts: Dict[str, int] = field(default_factory=dict)  # field_name -> attempt count
+    MAX_CLARIFICATIONS_PER_FIELD: int = 3
     
     # Timestamps
     started_at: str = field(default_factory=lambda: datetime.now().isoformat())
     last_activity: str = field(default_factory=lambda: datetime.now().isoformat())
     
+    MAX_MESSAGES = 20  # Keep last N messages, prune older ones
+
     def add_user_message(self, message: str) -> int:
         """Add a user message and increment turn count."""
         self.turn_count += 1
@@ -84,7 +88,13 @@ class ConversationState:
             "timestamp": datetime.now().isoformat()
         })
         self.last_activity = datetime.now().isoformat()
+        self._prune_messages()
         return self.turn_count
+
+    def _prune_messages(self):
+        """Keep only the last MAX_MESSAGES messages to prevent unbounded growth."""
+        if len(self.messages) > self.MAX_MESSAGES:
+            self.messages = self.messages[-self.MAX_MESSAGES:]
     
     def add_agent_message(self, message: str, question_field: Optional[str] = None):
         """Add an agent message."""
@@ -127,10 +137,19 @@ class ConversationState:
         """Mark a field as needing clarification."""
         if name not in self.ambiguous_fields:
             self.ambiguous_fields.append(name)
-        
+
+        # Track clarification attempts
+        self.clarification_attempts[name] = self.clarification_attempts.get(name, 0) + 1
+
         if name in self.collected_fields:
-            self.collected_fields[name].clarifying_question = clarifying_question
-            self.collected_fields[name].confidence = FieldConfidence.NEEDS_CLARIFICATION
+            # If we've asked too many times, accept the uncertain value as LOW confidence
+            if self.clarification_attempts[name] >= self.MAX_CLARIFICATIONS_PER_FIELD:
+                self.collected_fields[name].confidence = FieldConfidence.LOW
+                if name in self.ambiguous_fields:
+                    self.ambiguous_fields.remove(name)
+            else:
+                self.collected_fields[name].clarifying_question = clarifying_question
+                self.collected_fields[name].confidence = FieldConfidence.NEEDS_CLARIFICATION
     
     def add_urgent_flag(self, symptom: str):
         """Flag an urgent symptom."""
@@ -187,12 +206,30 @@ class ConversationState:
         """Check for urgent symptoms."""
         return len(self.urgent_flags) > 0
     
-    def count_collected_fields(self) -> int:
-        """Count fields with HIGH or MEDIUM confidence."""
-        return sum(
-            1 for f in self.collected_fields.values()
-            if f.confidence in [FieldConfidence.HIGH, FieldConfidence.MEDIUM]
-        )
+    # Fields that MUST be present before declaring readiness
+    CRITICAL_FIELDS = {"age", "sex", "conditions"}
+
+    def count_collected_fields(self) -> float:
+        """
+        Count fields with weighted confidence scoring.
+        HIGH/MEDIUM = 1.0, LOW = 0.75, NEEDS_CLARIFICATION = 0.5
+        """
+        score = 0.0
+        for f in self.collected_fields.values():
+            if f.confidence in [FieldConfidence.HIGH, FieldConfidence.MEDIUM]:
+                score += 1.0
+            elif f.confidence == FieldConfidence.LOW:
+                score += 0.75
+            elif f.confidence == FieldConfidence.NEEDS_CLARIFICATION:
+                score += 0.5
+        return score
+
+    def has_critical_fields(self) -> bool:
+        """Check if all critical fields have been collected (any confidence)."""
+        for field_name in self.CRITICAL_FIELDS:
+            if field_name not in self.collected_fields:
+                return False
+        return True
     
     def to_dict(self) -> Dict:
         """Convert to dictionary."""

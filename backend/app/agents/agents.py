@@ -8,12 +8,22 @@ class HealthBridgeAgents:
         # Configure LLM from environment
         provider = os.getenv("LLM_PROVIDER", "github")
         model = os.getenv("LLM_MODEL", "openai/gpt-4o-mini")
-        temperature = float(os.getenv("LLM_TEMPERATURE", "1.0"))
-        
+        temperature = float(os.getenv("LLM_TEMPERATURE", "0.3"))  # Low temp for health data consistency
+
+        # Verbosity control (off by default in production)
+        self._verbose = os.getenv("AGENT_VERBOSE", "false").lower() == "true"
+
         # Support for different providers
         api_key = None
         base_url = None
-        
+
+        env_var_map = {
+            "github": "GITHUB_TOKEN",
+            "azure": "AZURE_OPENAI_API_KEY",
+            "openai": "OPENAI_API_KEY",
+            "gemini": "GEMINI_API_KEY",
+        }
+
         if provider == "github":
             api_key = os.getenv("GITHUB_TOKEN")
             base_url = os.getenv("GITHUB_BASE_URL", "https://models.github.ai/inference")
@@ -23,6 +33,14 @@ class HealthBridgeAgents:
             api_key = os.getenv("OPENAI_API_KEY")
         elif provider == "gemini":
             api_key = os.getenv("GEMINI_API_KEY")
+
+        # Validate API key is present
+        if not api_key:
+            expected_var = env_var_map.get(provider, "UNKNOWN")
+            raise ValueError(
+                f"No API key found for provider '{provider}'. "
+                f"Set the {expected_var} environment variable."
+            )
 
         self.llm = LLM(
             model=model,
@@ -41,7 +59,7 @@ class HealthBridgeAgents:
                 "family history of hypertension/diabetes, smoking status, and alcohol consumption."
             ),
             allow_delegation=False,
-            verbose=True,
+            verbose=self._verbose,
             tools=[],
             llm=self.llm
         )
@@ -57,7 +75,7 @@ class HealthBridgeAgents:
                 "(low, moderate, high) and identify key drivers like family history or salt intake."
             ),
             allow_delegation=False,
-            verbose=True,
+            verbose=self._verbose,
             tools=[retrieve_guidelines],
             llm=self.llm
         )
@@ -74,7 +92,7 @@ class HealthBridgeAgents:
                 "You ensure all advice is grounded in these real-world constraints."
             ),
             allow_delegation=False,
-            verbose=True,
+            verbose=self._verbose,
             tools=[save_constraint, recall_memory],
             llm=self.llm
         )
@@ -90,7 +108,7 @@ class HealthBridgeAgents:
                 "and adapt the plan accordingly. You focus on simple triggers and motivational framing."
             ),
             allow_delegation=False,
-            verbose=True,
+            verbose=self._verbose,
             tools=[recall_memory],
             llm=self.llm
         )
@@ -106,7 +124,7 @@ class HealthBridgeAgents:
                 "non-alarming, always recommending in-person clinical care when necessary."
             ),
             allow_delegation=False,
-            verbose=True,
+            verbose=self._verbose,
             tools=[retrieve_guidelines],
             llm=self.llm
         )

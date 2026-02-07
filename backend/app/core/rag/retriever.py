@@ -33,23 +33,14 @@ class VectorRetriever:
     ):
         """
         Initialize the retriever with ChromaDB.
-        
+
         Args:
             collection_name: Name of the ChromaDB collection
-            persist_directory: Directory for persistent storage
+            persist_directory: Directory for persistent storage (ignored in HTTP mode)
         """
-        import chromadb
-        from chromadb.config import Settings as ChromaSettings
+        from app.core.chroma_client import get_chroma_client
 
-        persist_dir = persist_directory or settings.CHROMA_PERSIST_DIR
-
-        # Ensure directory exists
-        os.makedirs(persist_dir, exist_ok=True)
-
-        self.client = chromadb.PersistentClient(
-            path=persist_dir,
-            settings=ChromaSettings(anonymized_telemetry=False),
-        )
+        self.client = get_chroma_client()
 
         self.collection_name = collection_name
 
@@ -59,6 +50,12 @@ class VectorRetriever:
         from chromadb.utils.embedding_functions import EmbeddingFunction
 
         class _NoOpEmbedding(EmbeddingFunction):
+            def __init__(self):
+                pass  # Required by newer ChromaDB
+
+            def name(self) -> str:
+                return "noop_embedding"
+
             def __call__(self, input):
                 return [[0.0] * 384 for _ in input]
 

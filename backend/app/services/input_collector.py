@@ -18,7 +18,7 @@ from app.services.question_generator import get_question_generator, QuestionGene
 
 
 # Thresholds
-INTAKE_MIN_FIELDS = 6
+INTAKE_MIN_FIELDS = 4  # Reduced: critical fields check is stricter
 INTAKE_MAX_TURNS = 12
 FOLLOW_UP_MIN_QUESTIONS = 3
 FOLLOW_UP_MAX_TURNS = 7
@@ -187,11 +187,12 @@ class InputCollector:
         fields_collected = state.count_collected_fields()
         turn = state.turn_count
         
-        # Check if ready
-        enough_fields = fields_collected >= INTAKE_MIN_FIELDS
+        # Check if ready - need critical fields AND enough total fields
+        has_critical = state.has_critical_fields()
+        enough_fields = has_critical and fields_collected >= INTAKE_MIN_FIELDS
         safety_valve = turn >= INTAKE_MAX_TURNS
         has_urgent = state.has_urgent_symptoms()
-        
+
         if has_urgent:
             # Get urgent response
             question, _ = self.question_gen.get_next_question(state, "intake")
