@@ -10,25 +10,17 @@ beanie>=1.25.0
 # Vector DB & RAG
 chromadb>=0.4.22
 sentence-transformers>=2.3.0
-# Cognee>=0.1.0
 
 # Agent framework
 crewai>=0.80.0
 google-genai
-google-generativeai
-# langchain dependencies are managed by crewai, but if needed explicitly:
-langchain>=0.3.0
-langchain-community>=0.3.0
-
-# Background tasks
-celery>=5.3.0
-redis>=5.0.0
 
 # Auth
 firebase-admin>=6.4.0
 
-# Rate limiting
+# Rate limiting & caching
 slowapi>=0.1.9
+redis>=5.0.0
 
 # Utils
 opik
@@ -36,4 +28,5 @@ pydantic>=2.5.0
 pydantic-settings>=2.1.0
 httpx>=0.26.0
 
-pytest-asyncio>=0.21.0
+# Dev dependencies (install separately: pip install -r requirements-dev.txt)
+# pytest-asyncio>=0.21.0

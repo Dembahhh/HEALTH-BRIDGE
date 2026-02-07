@@ -141,6 +141,40 @@ HEALTH-BRIDGE/
 - MongoDB (local or Atlas)
 - Firebase project (for authentication)
 
+## Docker Quick Start
+
+The fastest way to run the entire stack:
+
+```bash
+# 1. Configure environment
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+# Edit both .env files with your API keys and Firebase config
+
+# 2. Start everything
+docker-compose up --build
+
+# 3. Access
+# Frontend: http://localhost
+# Backend API: http://localhost:8000
+# API Docs: http://localhost:8000/docs
+```
+
+To run in the background:
+```bash
+docker-compose up --build -d
+```
+
+To stop:
+```bash
+docker-compose down
+```
+
+To stop and remove all data:
+```bash
+docker-compose down -v
+```
+
 ### Backend Setup
 
 ```bash
