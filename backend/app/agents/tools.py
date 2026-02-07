@@ -105,7 +105,7 @@ def get_rag_retriever():
             from app.core.rag.retriever import get_retriever
             _retriever = get_retriever()
         except Exception as e:
-            print(f"Warning: RAG Retriever init failed: {e}")
+            logger.warning("RAG Retriever init failed: %s", e)
             _retriever = None
         _retriever_initialized = True
     return _retriever

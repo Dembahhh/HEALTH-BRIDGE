@@ -482,7 +482,7 @@ Once you've received medical care, we can continue with your health plan."""
             )
             
         except Exception as e:
-            print(f"Warning: Failed to save to memory: {e}")
+            logger.warning("Failed to save to memory: %s", e)
     
     def get_combined_input(self) -> str:
         """Get combined user input for crew."""
