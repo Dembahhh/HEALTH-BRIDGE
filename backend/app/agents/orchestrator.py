@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 # Thread pool for blocking CrewAI calls
 _executor = ThreadPoolExecutor(max_workers=3)
 
+# Auto-routing configuration
+INTENT_WORD_COUNT_THRESHOLD = 20  # Messages under this length default to quick pipeline
+
 
 class ChatOrchestrator:
     """
@@ -42,6 +45,41 @@ class ChatOrchestrator:
                 use_llm=True,
             )
         return self._sessions[session_id]
+
+    @staticmethod
+    def _classify_intent(message: str) -> str:
+        """Classify user intent to route to quick or full pipeline.
+        
+        Returns:
+            'quick' for simple questions (educational, FAQs)
+            'full' for complex requests (intake, risk assessment, habit planning)
+        """
+        text = message.lower().strip()
+        
+        # Full pipeline signals — personal health data or action requests
+        full_signals = [
+            "i am", "i'm", "years old", "my age", "my weight", "i smoke",
+            "i drink", "my diet", "family history", "assess me", "check my risk",
+            "create a plan", "habit plan", "my health", "i weigh", "bmi",
+            "follow up", "follow-up", "progress", "update my", "check in",
+        ]
+        
+        # Quick signals — educational, simple questions
+        quick_signals = [
+            "what is", "what are", "how does", "tell me about", "explain",
+            "define", "difference between", "why is", "can you", "should i",
+            "is it", "how to", "tips for", "benefits of",
+        ]
+        
+        if any(signal in text for signal in full_signals):
+            return "full"
+        if any(signal in text for signal in quick_signals):
+            return "quick"
+        
+        # Default: if message is short (<INTENT_WORD_COUNT_THRESHOLD words), quick; otherwise full
+        if len(text.split()) < INTENT_WORD_COUNT_THRESHOLD:
+            return "quick"
+        return "full"
 
     async def process_message(
         self,

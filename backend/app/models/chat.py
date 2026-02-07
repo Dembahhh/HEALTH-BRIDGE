@@ -51,3 +51,19 @@ class ChatSession(Document):
     def update_timestamp(self):
         """Update the updated_at timestamp."""
         self.updated_at = datetime.utcnow()
+
+
+class MessageFeedback(Document):
+    """User feedback on a chat message (thumbs up/down)."""
+    
+    message_id: str  # Reference to ChatMessage
+    session_id: Indexed(str)
+    user_id: Indexed(str)
+    
+    rating: int  # 1 = thumbs up, -1 = thumbs down
+    comment: Optional[str] = None  # Optional text feedback
+    
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    class Settings:
+        name = "message_feedback"

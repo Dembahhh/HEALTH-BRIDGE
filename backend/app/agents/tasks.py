@@ -6,7 +6,7 @@ Tasks use output_pydantic for structured, validated output.
 """
 
 from crewai import Task
-from .models import Profile, RiskAssessment, Constraints, HabitPlan, SafetyReview
+from .models import Profile, RiskAssessment, Constraints, HabitPlan, SafetyReview, Citation
 
 
 def intake_task(agent, user_input: str, user_id: str, memory_context: str = "") -> Task:
@@ -42,6 +42,11 @@ def risk_assessment_task(agent, context_tasks: list, memory_context: str = "") -
             "3. If no guideline supports a claim, do NOT include it.\n"
             "4. Map user data to risk bands: low, moderate, or high.\n"
             "5. For each key_driver, reference the specific guideline that supports it.\n\n"
+            "CITATION REQUIREMENTS:\n"
+            "- For each key_driver, include a Citation with the source_id from the retrieved guidelines.\n"
+            "- The content_snippet should be the exact text from the guideline that supports the driver.\n"
+            "- Include the source_name and relevance_score from the tool output.\n"
+            "- If a claim has no supporting source, do NOT include it as a key_driver.\n\n"
             "CONSTRAINTS:\n"
             "- Do NOT diagnose. Only estimate risk bands.\n"
             "- Do NOT invent statistics or percentages.\n"
@@ -82,6 +87,10 @@ def habit_plan_task(agent, user_id: str, context_tasks: list) -> Task:
             "- Habits must be safe given the user's exercise_safety constraints.\n"
             "- Do NOT recommend gym memberships, expensive supplements, or equipment.\n"
             "- Base rationale on retrieved guidelines, not general knowledge.\n\n"
+            "CITATION REQUIREMENTS:\n"
+            "- For each habit's rationale, reference the guideline that supports it.\n"
+            "- Include Citations with source_id, source_name, and the supporting text snippet.\n"
+            "- Only recommend habits that are supported by retrieved medical guidelines.\n\n"
             "EXAMPLE OUTPUT:\n"
             '{"duration_weeks": 4, "focus_areas": ["Reduce salt intake", '
             '"Increase daily movement"], "habits": [{"action": "Walk for 15 minutes", '
@@ -112,7 +121,10 @@ def safety_review_task(agent, context_tasks: list) -> Task:
             "and a motivational closing.\n"
             "- If parts are unsafe, rewrite those parts and include the corrected "
             "full plan in revised_response.\n"
-            "- NEVER leave revised_response as null or empty."
+            "- NEVER leave revised_response as null or empty.\n\n"
+            "CITATION REQUIREMENTS:\n"
+            "- When forwarding the plan, preserve all citations from the habit plan.\n"
+            "- If you flag safety issues, cite the guideline that identifies the concern.\n"
         ),
         agent=agent,
         context=context_tasks,

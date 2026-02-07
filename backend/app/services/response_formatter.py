@@ -132,6 +132,27 @@ class ResponseFormatter:
     # ── Domain formatters ──────────────────────────────────────────────
 
     @staticmethod
+    def _format_citations(citations: list) -> str:
+        """Format citations as a Sources section in markdown."""
+        if not citations:
+            return ""
+        
+        lines = ["\n---\n📚 **Sources:**"]
+        seen = set()
+        for c in citations:
+            source_id = c.get("source_id", "")
+            source_name = c.get("source_name", "Unknown")
+            snippet = c.get("content_snippet", "")[:150]
+            
+            if source_id in seen:
+                continue
+            seen.add(source_id)
+            
+            lines.append(f"  [{source_id}] *{source_name}* — \"{snippet}\"")
+        
+        return "\n".join(lines)
+
+    @staticmethod
     def _format_habit_plan(data: dict) -> str:
         """Format a HabitPlan dict into friendly markdown."""
         lines = []
@@ -164,6 +185,11 @@ class ResponseFormatter:
         if msg:
             lines.append(f"---\n*{msg}*")
 
+        # Add citations if present
+        citations = data.get("citations", [])
+        if citations:
+            lines.append(ResponseFormatter._format_citations(citations))
+
         return "\n".join(lines)
 
     @staticmethod
@@ -186,6 +212,11 @@ class ResponseFormatter:
         explanation = data.get("explanation", "")
         if explanation:
             lines.append(f"\n{explanation}")
+
+        # Add citations if present
+        citations = data.get("citations", [])
+        if citations:
+            lines.append(ResponseFormatter._format_citations(citations))
 
         return "\n".join(lines)
 
