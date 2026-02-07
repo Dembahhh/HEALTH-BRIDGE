@@ -37,6 +37,13 @@ class Profile(BaseModel):
     smoking: bool = Field(False, description="Does the user smoke?")
     alcohol: str = Field(..., description="Alcohol consumption habits")
 
+    @field_validator("age")
+    @classmethod
+    def validate_age(cls, v):
+        if not 1 <= v <= 120:
+            raise ValueError(f"Age must be between 1 and 120, got {v}")
+        return v
+
     @model_validator(mode="before")
     @classmethod
     def strip_comments(cls, data):
@@ -76,6 +83,13 @@ class HabitPlan(BaseModel):
     focus_areas: List[str] = Field(..., description="Main goals (e.g. 'Reduce salt', 'Increase movement')")
     habits: List[Habit] = Field(..., description="List of small habits to start")
     motivational_message: str = Field(..., description="Encouraging closing message")
+
+    @field_validator("habits")
+    @classmethod
+    def validate_habits(cls, v):
+        if not v or len(v) == 0:
+            raise ValueError("HabitPlan must include at least 1 habit")
+        return v
 
 class SafetyReview(BaseModel):
     """Output from the Safety Agent."""

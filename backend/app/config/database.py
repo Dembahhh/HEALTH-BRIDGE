@@ -4,10 +4,13 @@ Database Configuration
 MongoDB connection and initialization using Motor and Beanie.
 """
 
+import logging
 from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 
 from app.config.settings import settings
+
+logger = logging.getLogger(__name__)
 
 # Global client reference
 _client: AsyncIOMotorClient | None = None
@@ -17,7 +20,13 @@ async def init_db() -> None:
     """Initialize MongoDB connection and Beanie ODM."""
     global _client
 
-    _client = AsyncIOMotorClient(settings.MONGODB_URL)
+    _client = AsyncIOMotorClient(
+        settings.MONGODB_URL,
+        maxPoolSize=50,
+        minPoolSize=5,
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=10000,
+    )
 
     # Import models here to avoid circular imports
     from app.models.user import User

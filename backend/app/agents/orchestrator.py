@@ -103,34 +103,69 @@ class ChatOrchestrator:
         message: str,
     ) -> Dict:
         """
-        Quick single-turn response without the full crew pipeline.
+        Quick single-turn response via a direct LLM call (no crew pipeline).
 
-        Uses the ChatService's input assessment and a lightweight LLM call
-        for fast responses (2-5s instead of 30-60s).
+        Targets 2-5s response time instead of 30-60s for a full crew run.
         """
         loop = asyncio.get_event_loop()
 
-        # Try a lightweight crew (general) which only uses 2 agents
         try:
-            crew_result = await loop.run_in_executor(
-                _executor,
-                self._chat_service.run_session,
-                message,
-                user_id,
-                "general",
-                {},
-                [message],
+            response = await loop.run_in_executor(
+                _executor, self._direct_llm_call, message, user_id
             )
-            return {
-                "content": str(crew_result),
-                "agent_name": "quick",
-            }
+            return {"content": response, "agent_name": "quick"}
         except Exception as e:
-            print(f"Quick message error: {e}")
+            import logging
+            logging.getLogger(__name__).error("Quick message error: %s", e, exc_info=True)
             return {
                 "content": "I'm sorry, I had trouble processing that. Could you try rephrasing your question?",
                 "agent_name": "system",
             }
+
+    @staticmethod
+    def _direct_llm_call(message: str, user_id: str) -> str:
+        """Single LLM call via httpx — no CrewAI overhead."""
+        import os
+        import httpx
+
+        provider = os.getenv("LLM_PROVIDER", "github")
+        model = os.getenv("LLM_MODEL", "openai/gpt-4o-mini")
+
+        if provider == "github":
+            api_key = os.getenv("GITHUB_TOKEN")
+            base_url = os.getenv("GITHUB_BASE_URL", "https://models.github.ai/inference")
+        elif provider == "openai":
+            api_key = os.getenv("OPENAI_API_KEY")
+            base_url = "https://api.openai.com/v1"
+        else:
+            api_key = os.getenv("OPENAI_API_KEY") or os.getenv("GITHUB_TOKEN")
+            base_url = os.getenv("GITHUB_BASE_URL", "https://models.github.ai/inference")
+
+        system_prompt = (
+            "You are a friendly, knowledgeable health coach for preventive health "
+            "(hypertension and type 2 diabetes) in African settings. "
+            "Give concise, practical, culturally sensitive advice. "
+            "NEVER diagnose or prescribe medication. "
+            "If the user describes urgent symptoms (chest pain, stroke signs), "
+            "tell them to seek emergency care immediately."
+        )
+
+        resp = httpx.post(
+            f"{base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "model": model,
+                "temperature": 0.4,
+                "max_tokens": 1024,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": message},
+                ],
+            },
+            timeout=25.0,
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"]
 
     def remove_session(self, session_id: str):
         """Remove a session from the in-memory cache."""

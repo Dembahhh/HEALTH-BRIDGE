@@ -1,10 +1,18 @@
-from opik import track
-from app.agents.crew import HealthBridgeCrew
-from app.services.input_collector import InputCollector
-from typing import Dict, Any, List, Optional
-from datetime import datetime
+import asyncio
+import concurrent.futures
 import json
+import logging
+import os
 import re
+from datetime import datetime
+from typing import Dict, Any, List, Optional
+
+from opik import track
+
+from app.agents.crew import HealthBridgeCrew, ParallelIntakeOrchestrator
+from app.services.input_collector import InputCollector
+
+logger = logging.getLogger(__name__)
 
 
 class ChatServiceResult:
@@ -236,15 +244,15 @@ class ChatService:
         session_type: str = "intake",
         detected_fields: Optional[Dict] = None,
         conversation_history: Optional[List[str]] = None,
-        use_cognee: bool = True  # NEW: Flag to use Cognee
+        use_cognee: bool = True,
     ) -> ChatServiceResult:
         """
         Run the appropriate crew based on session type.
 
-        PHASE 2: Now supports Cognee graph memory when use_cognee=True.
+        Supports:
+        - Cognee graph memory when MEMORY_BACKEND=cognee
+        - Parallel Risk+SDOH execution when PARALLEL_CREW=true (intake only)
         """
-        import os
-
         # Check if Cognee should be used
         use_cognee_memory = use_cognee and os.getenv("MEMORY_BACKEND", "semantic").lower() == "cognee"
 
@@ -259,14 +267,20 @@ class ChatService:
             has_profile = "[profile]" in memory_context or "## User Profile" in memory_context
             session_type = self._detect_session_type(user_input, has_profile)
 
-        if session_type == "intake":
+        # Parallel execution for intake when enabled
+        use_parallel = os.getenv("PARALLEL_CREW", "false").lower() == "true"
+
+        if session_type == "intake" and use_parallel:
+            result = self._run_parallel_intake(user_input, user_id, memory_context)
+        elif session_type == "intake":
             crew = self.crew.intake_crew(user_input, user_id, memory_context)
+            result = crew.kickoff(inputs={"user_id": user_id})
         elif session_type == "follow_up":
             crew = self.crew.follow_up_crew(user_input, user_id, memory_context)
+            result = crew.kickoff(inputs={"user_id": user_id})
         else:
             crew = self.crew.general_crew(user_input, user_id, memory_context)
-
-        result = crew.kickoff(inputs={"user_id": user_id})
+            result = crew.kickoff(inputs={"user_id": user_id})
 
         # Post-processing: save key outputs to memory
         if use_cognee_memory:
@@ -290,6 +304,45 @@ class ChatService:
         )
 
         return ChatServiceResult(raw_result=result, user_id=user_id)
+
+    def _run_parallel_intake(self, user_input: str, user_id: str, memory_context: str):
+        """Run intake with parallel Risk + SDOH execution.
+
+        Stage 1: Intake (profile extraction) - sequential
+        Stage 2: Risk + SDOH - parallel via ThreadPoolExecutor
+        Stage 3: Plan + Safety - sequential
+        """
+        orch = ParallelIntakeOrchestrator()
+
+        # Stage 1: Extract profile
+        logger.info("Parallel intake: Stage 1 - Profile extraction")
+        profile_result = orch.stage1_intake(user_input, user_id, memory_context).kickoff(
+            inputs={"user_id": user_id}
+        )
+        profile_str = str(profile_result)
+
+        # Stage 2: Risk + SDOH in parallel using threads
+        logger.info("Parallel intake: Stage 2 - Risk + SDOH (parallel)")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            risk_crew = orch.stage2_risk(profile_str, memory_context)
+            sdoh_crew = orch.stage2_sdoh(user_input, user_id, memory_context)
+
+            risk_future = executor.submit(risk_crew.kickoff, inputs={"user_id": user_id})
+            sdoh_future = executor.submit(sdoh_crew.kickoff, inputs={"user_id": user_id})
+
+            risk_result = risk_future.result()
+            sdoh_result = sdoh_future.result()
+
+        risk_str = str(risk_result)
+        sdoh_str = str(sdoh_result)
+
+        # Stage 3: Plan + Safety
+        logger.info("Parallel intake: Stage 3 - Plan + Safety")
+        final_result = orch.stage3_plan_safety(risk_str, sdoh_str, user_id).kickoff(
+            inputs={"user_id": user_id}
+        )
+
+        return final_result
 
     def _save_session_memories_structured(
         self,
