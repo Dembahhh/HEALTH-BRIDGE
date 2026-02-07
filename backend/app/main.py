@@ -9,8 +9,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
 
 from app.config.settings import settings
 from app.config.database import init_db, close_db, get_database
@@ -96,6 +94,28 @@ def create_app() -> FastAPI:
             "version": "0.1.0",
             "database": db_status,
         }
+
+    # ChromaDB health check endpoint
+    @app.get("/health/chromadb", tags=["Health"])
+    async def health_chromadb():
+        """
+        Check ChromaDB connectivity.
+        
+        Note: This creates a new SemanticMemory instance on each call.
+        For production with frequent health checks, consider implementing
+        a cached connection test or singleton pattern.
+        """
+        try:
+            from app.core.memory.semantic_memory import SemanticMemory
+            memory = SemanticMemory()
+            # Try a simple operation
+            stats = memory.collection.count()
+            return {"status": "healthy", "documents": stats}
+        except Exception as e:
+            return JSONResponse(
+                status_code=503,
+                content={"status": "unhealthy", "error": str(e)}
+            )
 
     # Root endpoint
     @app.get("/", tags=["Root"])

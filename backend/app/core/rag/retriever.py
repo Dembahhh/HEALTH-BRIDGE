@@ -6,12 +6,20 @@ Implements the RAG retrieval layer as specified:
 - Vector search with metadata filters (condition, topic)
 - Returns top-k relevant chunks
 - Supports pre-filtering by condition/topic
+- Environment-based client selection for production scalability
 """
 
 from typing import List, Dict, Any, Optional
 import os
 
 from app.config.settings import settings
+from app.config.chroma import (
+    CHROMA_MODE,
+    CHROMA_HOST,
+    CHROMA_PORT,
+    CHROMA_AUTH_TOKEN,
+    CHROMA_AUTH_PROVIDER_CLASS
+)
 from app.core.rag.embeddings import get_embedding_client
 from app.core.rag.chunker import Chunk
 
@@ -40,7 +48,36 @@ class VectorRetriever:
         """
         from app.core.chroma_client import get_chroma_client
 
-        self.client = get_chroma_client()
+        # Ensure directory exists (for persistent mode)
+        if CHROMA_MODE != "http":
+            os.makedirs(persist_dir, exist_ok=True)
+
+        # Environment-based client selection for production scalability
+        if CHROMA_MODE == "http":
+            # Production: HTTP mode for multi-worker support
+            settings_dict = {
+                "anonymized_telemetry": False
+            }
+            # Only add auth settings if token is provided
+            if CHROMA_AUTH_TOKEN:
+                settings_dict["chroma_client_auth_provider"] = CHROMA_AUTH_PROVIDER_CLASS
+                settings_dict["chroma_client_auth_credentials"] = CHROMA_AUTH_TOKEN
+            
+            chroma_settings = ChromaSettings(**settings_dict)
+            self.client = chromadb.HttpClient(
+                host=CHROMA_HOST,
+                port=CHROMA_PORT,
+                settings=chroma_settings
+            )
+        else:
+            # Development: Persistent mode (local file)
+            self.client = chromadb.PersistentClient(
+                path=persist_dir,
+                settings=ChromaSettings(
+                    anonymized_telemetry=False,
+                    allow_reset=True  # Allow clearing in dev
+                )
+            )
 
         self.collection_name = collection_name
 

@@ -1,9 +1,14 @@
 from chromadb.utils import embedding_functions
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
-import logging
-
-logger = logging.getLogger(__name__)
+from app.config.chroma import (
+    CHROMA_MODE,
+    CHROMA_DB_PATH,
+    CHROMA_HOST,
+    CHROMA_PORT,
+    CHROMA_AUTH_TOKEN,
+    CHROMA_AUTH_PROVIDER_CLASS
+)
 
 
 class SemanticMemory:
@@ -18,9 +23,32 @@ class SemanticMemory:
     """
 
     def __init__(self):
-        from app.core.chroma_client import get_chroma_client
-
-        self.client = get_chroma_client()
+        # Environment-based client selection for production scalability
+        if CHROMA_MODE == "http":
+            # Production: HTTP mode for multi-worker support
+            settings_dict = {
+                "anonymized_telemetry": False
+            }
+            # Only add auth settings if token is provided
+            if CHROMA_AUTH_TOKEN:
+                settings_dict["chroma_client_auth_provider"] = CHROMA_AUTH_PROVIDER_CLASS
+                settings_dict["chroma_client_auth_credentials"] = CHROMA_AUTH_TOKEN
+            
+            settings = Settings(**settings_dict)
+            self.client = chromadb.HttpClient(
+                host=CHROMA_HOST,
+                port=CHROMA_PORT,
+                settings=settings
+            )
+        else:
+            # Development: Persistent mode (local file)
+            self.client = chromadb.PersistentClient(
+                path=CHROMA_DB_PATH,
+                settings=Settings(
+                    anonymized_telemetry=False,
+                    allow_reset=True  # Allow clearing in dev
+                )
+            )
 
         from app.core.rag.embeddings import get_embedding_client
 

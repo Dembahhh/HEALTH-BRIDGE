@@ -24,6 +24,7 @@ class HealthProfile(Document):
     """User health profile document model."""
 
     user_id: Indexed(str)  # Reference to User.firebase_uid
+    photo_url: Optional[str] = None  # Profile picture URL
 
     # Demographics
     age_band: Optional[str] = None  # 18-29, 30-39, 40-49, 50-59, 60+
