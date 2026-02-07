@@ -279,6 +279,53 @@ npm run dev
 - Backend API: http://localhost:8000
 - API Docs: http://localhost:8000/docs
 
+## Production Deployment
+
+### ChromaDB Setup for Multi-Worker Deployment
+
+The application uses ChromaDB for vector storage. In development mode, it uses a persistent local file store. For production deployment with multiple FastAPI workers (to handle concurrent requests), you must use ChromaDB in HTTP mode with a standalone ChromaDB server to avoid database locking issues.
+
+#### Option 1: Development Mode (Single Worker)
+For local development or testing:
+
+```bash
+cd backend
+# Ensure CHROMA_MODE=persistent in .env (default)
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+#### Option 2: Production Mode (Multiple Workers)
+
+1. **Start ChromaDB service:**
+```bash
+cd backend
+docker-compose -f docker-compose.chromadb.yml up -d
+```
+
+2. **Set environment variables in `.env`:**
+```env
+CHROMA_MODE=http
+CHROMA_HOST=localhost
+CHROMA_PORT=8000
+CHROMA_AUTH_TOKEN=your-secure-token-here  # Optional but recommended
+```
+
+3. **Run FastAPI with multiple workers:**
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8001 --workers 4
+```
+
+Note: ChromaDB runs on port 8000 by default, so FastAPI should use a different port (e.g., 8001) in this setup.
+
+4. **Verify ChromaDB connectivity:**
+```bash
+curl http://localhost:8001/health/chromadb
+```
+
+#### Health Check Endpoints
+- `/health` - General API health status
+- `/health/chromadb` - ChromaDB connectivity and document count
+
 ## Multi-Agent System
 
 The system uses 5 specialized CrewAI agents:
