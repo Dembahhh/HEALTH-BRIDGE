@@ -413,12 +413,11 @@ Once you've received medical care, we can continue with your health plan."""
         
         # Build final response
         response_parts = []
-        
-        # Add crew result
-        if hasattr(crew_result, 'raw'):
-            response_parts.append(str(crew_result.raw))
-        else:
-            response_parts.append(str(crew_result))
+
+        # Format crew result into human-readable text (not raw JSON)
+        from app.services.response_formatter import ResponseFormatter
+        formatted = ResponseFormatter.format_crew_output(crew_result)
+        response_parts.append(formatted)
         
         # Add interventions for follow-up sessions
         if self.session_type == "follow_up" and self.interventions_generated:

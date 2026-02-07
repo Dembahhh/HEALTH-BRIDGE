@@ -28,9 +28,16 @@ class ChatServiceResult:
 
     def _extract_habits(self) -> list:
         """Extract habits from structured output or raw text."""
-        # If SafetyReview pydantic output is available
+        # If SafetyReview pydantic output is available, extract from revised_response
         if self.pydantic_output and hasattr(self.pydantic_output, 'revised_response'):
-            pass
+            revised = self.pydantic_output.revised_response
+            if revised:
+                try:
+                    data = json.loads(revised) if isinstance(revised, str) else revised
+                    if isinstance(data, dict) and "habits" in data:
+                        return data["habits"]
+                except (json.JSONDecodeError, TypeError):
+                    pass  # revised_response is plain text, fall through to regex
 
         # Try JSON extraction from raw text
         json_match = re.search(r'\{[\s\S]*"habits"[\s\S]*\}', self.raw_result)
