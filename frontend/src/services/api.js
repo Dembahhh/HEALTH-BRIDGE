@@ -35,6 +35,11 @@ export const chatApi = {
     sendQuickMessage: (sessionId, content) => api.post('/chat/quick', { session_id: sessionId, content }, { timeout: 30000 }),
     // Full agent crew - comprehensive analysis (30-60+ seconds)
     sendMessage: (sessionId, content) => api.post('/chat/message', { session_id: sessionId, content }, { timeout: 120000 }),
+    // Auto-routed: system decides quick vs full pipeline
+    sendAutoMessage: (sessionId, content) => api.post('/chat/auto', { session_id: sessionId, content }, { timeout: 120000 }),
+    // Feedback
+    submitFeedback: (messageId, sessionId, rating, comment = null) => 
+        api.post('/chat/feedback', { message_id: messageId, session_id: sessionId, rating, comment }),
     getSessionMessages: (sessionId) => api.get(`/chat/session/${sessionId}/messages`),
     getSessions: () => api.get('/chat/sessions'),
 };

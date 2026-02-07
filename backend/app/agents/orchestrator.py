@@ -43,6 +43,41 @@ class ChatOrchestrator:
             )
         return self._sessions[session_id]
 
+    @staticmethod
+    def _classify_intent(message: str) -> str:
+        """Classify user intent to route to quick or full pipeline.
+        
+        Returns:
+            'quick' for simple questions (educational, FAQs)
+            'full' for complex requests (intake, risk assessment, habit planning)
+        """
+        text = message.lower().strip()
+        
+        # Full pipeline signals — personal health data or action requests
+        full_signals = [
+            "i am", "i'm", "years old", "my age", "my weight", "i smoke",
+            "i drink", "my diet", "family history", "assess me", "check my risk",
+            "create a plan", "habit plan", "my health", "i weigh", "bmi",
+            "follow up", "follow-up", "progress", "update my", "check in",
+        ]
+        
+        # Quick signals — educational, simple questions
+        quick_signals = [
+            "what is", "what are", "how does", "tell me about", "explain",
+            "define", "difference between", "why is", "can you", "should i",
+            "is it", "how to", "tips for", "benefits of",
+        ]
+        
+        if any(signal in text for signal in full_signals):
+            return "full"
+        if any(signal in text for signal in quick_signals):
+            return "quick"
+        
+        # Default: if message is short (<20 words), quick; otherwise full
+        if len(text.split()) < 20:
+            return "quick"
+        return "full"
+
     async def process_message(
         self,
         user_id: str,
