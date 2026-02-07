@@ -27,6 +27,3 @@ opik
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
 httpx>=0.26.0
-
-# Dev dependencies (install separately: pip install -r requirements-dev.txt)
-# pytest-asyncio>=0.21.0
