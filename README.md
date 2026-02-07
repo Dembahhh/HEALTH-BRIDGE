@@ -141,40 +141,6 @@ HEALTH-BRIDGE/
 - MongoDB (local or Atlas)
 - Firebase project (for authentication)
 
-## Docker Quick Start
-
-The fastest way to run the entire stack:
-
-```bash
-# 1. Configure environment
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
-# Edit both .env files with your API keys and Firebase config
-
-# 2. Start everything
-docker-compose up --build
-
-# 3. Access
-# Frontend: http://localhost
-# Backend API: http://localhost:8000
-# API Docs: http://localhost:8000/docs
-```
-
-To run in the background:
-```bash
-docker-compose up --build -d
-```
-
-To stop:
-```bash
-docker-compose down
-```
-
-To stop and remove all data:
-```bash
-docker-compose down -v
-```
-
 ### Backend Setup
 
 ```bash
@@ -312,6 +278,62 @@ npm run dev
 - Frontend: http://localhost:5173
 - Backend API: http://localhost:8000
 - API Docs: http://localhost:8000/docs
+
+## Alternative: Docker Deployment (Optional)
+
+If you prefer using Docker instead of the manual setup above, you can run the entire stack with Docker Compose.
+
+### Prerequisites for Docker
+- Docker and Docker Compose installed
+- `.env` files configured (see Configuration section above)
+
+### Quick Start with Docker
+
+```bash
+# 1. Ensure environment files are configured
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+# Edit both .env files with your API keys and Firebase config
+
+# 2. Start all services (backend, frontend, MongoDB, Redis)
+docker-compose up --build
+
+# 3. Access the application
+# Frontend: http://localhost
+# Backend API: http://localhost:8000
+# API Docs: http://localhost:8000/docs
+```
+
+### Docker Commands
+
+Run in the background:
+```bash
+docker-compose up --build -d
+```
+
+View logs:
+```bash
+docker-compose logs -f
+```
+
+Stop services:
+```bash
+docker-compose down
+```
+
+Stop and remove all data (including database volumes):
+```bash
+docker-compose down -v
+```
+
+### What's Included in Docker Setup
+- **Backend**: Python/FastAPI with CPU-optimized PyTorch (~1.8GB smaller)
+- **Frontend**: React app served by nginx with API proxying
+- **MongoDB 7**: Database with health checks and persistent storage
+- **Redis 7**: Caching layer with health checks
+- **ChromaDB**: Vector storage (persistent mode)
+
+**Note**: The Docker setup uses optimized images and includes all dependencies. Database data persists in Docker volumes across container restarts.
 
 ## Production Deployment
 
