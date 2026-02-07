@@ -11,11 +11,14 @@ Uses multiple strategies:
 This is the missing layer between LLM and Regex.
 """
 
+import logging
 import re
 from typing import Dict, List, Optional, Tuple, Any, Set
 from dataclasses import dataclass
 from enum import Enum
 import os
+
+logger = logging.getLogger(__name__)
 
 # Try to import sentence-transformers (you already have this for ChromaDB)
 try:
@@ -23,7 +26,7 @@ try:
     EMBEDDINGS_AVAILABLE = True
 except ImportError:
     EMBEDDINGS_AVAILABLE = False
-    print("⚠️ sentence-transformers not available, using fuzzy matching only")
+    logger.warning("sentence-transformers not available, using fuzzy matching only")
 
 
 class Intent(Enum):
@@ -92,9 +95,9 @@ class SemanticMatcher:
             try:
                 # Use a small, fast model
                 self.model = SentenceTransformer('all-MiniLM-L6-v2')
-                print("✅ Semantic Matcher: Using embeddings")
+                logger.info("Semantic Matcher: Using embeddings")
             except Exception as e:
-                print(f"⚠️ Could not load embedding model: {e}")
+                logger.warning("Could not load embedding model: %s", e)
                 self.use_embeddings = False
         
         # Comprehensive knowledge base

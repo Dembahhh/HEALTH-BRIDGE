@@ -40,10 +40,16 @@ def get_chroma_client():
             settings.CHROMA_HOST,
             settings.CHROMA_PORT,
         )
+        chroma_settings_dict = {"anonymized_telemetry": False}
+        if settings.CHROMA_AUTH_TOKEN:
+            chroma_settings_dict["chroma_client_auth_provider"] = (
+                "chromadb.auth.token_authn.TokenAuthClientProvider"
+            )
+            chroma_settings_dict["chroma_client_auth_credentials"] = settings.CHROMA_AUTH_TOKEN
         _client = chromadb.HttpClient(
             host=settings.CHROMA_HOST,
             port=settings.CHROMA_PORT,
-            settings=ChromaSettings(anonymized_telemetry=False),
+            settings=ChromaSettings(**chroma_settings_dict),
         )
     else:
         persist_dir = settings.CHROMA_PERSIST_DIR
