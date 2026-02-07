@@ -34,10 +34,14 @@ def create_limiter() -> Limiter:
     storage_uri = None
     try:
         if settings.REDIS_URL:
+            # Test Redis connectivity before using it
+            import redis
+            r = redis.from_url(settings.REDIS_URL, socket_connect_timeout=2)
+            r.ping()
             storage_uri = settings.REDIS_URL
             logger.info("Rate limiter using Redis: %s", storage_uri)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.info("Redis unavailable, using in-memory rate limiter: %s", e)
 
     if storage_uri:
         try:
