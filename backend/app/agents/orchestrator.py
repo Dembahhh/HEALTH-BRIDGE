@@ -6,13 +6,15 @@ Manages per-session state and routes messages through the multi-agent pipeline.
 """
 
 import asyncio
+import logging
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from uuid import uuid4
 
 from app.services.session_manager import SessionManager
 from app.services.chat import ChatService
 
+logger = logging.getLogger(__name__)
 
 # Thread pool for blocking CrewAI calls
 _executor = ThreadPoolExecutor(max_workers=3)
@@ -27,6 +29,8 @@ class ChatOrchestrator:
     def __init__(self):
         self._sessions: Dict[str, SessionManager] = {}
         self._chat_service = ChatService()
+        # Per-session conversation history for quick chat (keeps last N exchanges)
+        self._quick_history: Dict[str, List[dict]] = {}
 
     def _get_or_create_session(
         self, user_id: str, session_id: str, session_type: str
@@ -106,25 +110,40 @@ class ChatOrchestrator:
         Quick single-turn response via a direct LLM call (no crew pipeline).
 
         Targets 2-5s response time instead of 30-60s for a full crew run.
+        Now includes conversation history and memory recall for context.
         """
         loop = asyncio.get_event_loop()
 
+        # Get or create conversation history for this session
+        history = self._quick_history.get(session_id, [])
+
         try:
             response = await loop.run_in_executor(
-                _executor, self._direct_llm_call, message, user_id
+                _executor, self._direct_llm_call, message, user_id, history
             )
+            # Save to history (keep last 10 exchanges = 20 messages)
+            history.append({"role": "user", "content": message})
+            history.append({"role": "assistant", "content": response})
+            self._quick_history[session_id] = history[-20:]
+
             return {"content": response, "agent_name": "quick"}
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).error("Quick message error: %s", e, exc_info=True)
+            logger.error("Quick message error: %s", e, exc_info=True)
             return {
                 "content": "I'm sorry, I had trouble processing that. Could you try rephrasing your question?",
                 "agent_name": "system",
             }
 
     @staticmethod
-    def _direct_llm_call(message: str, user_id: str) -> str:
-        """Single LLM call via httpx — no CrewAI overhead."""
+    def _direct_llm_call(
+        message: str, user_id: str, history: List[dict] = None
+    ) -> str:
+        """Single LLM call via httpx — no CrewAI overhead.
+
+        Includes:
+        - Memory recall for user context (profile, past habits)
+        - Conversation history for multi-turn continuity
+        """
         import os
         import httpx
 
@@ -141,6 +160,21 @@ class ChatOrchestrator:
             api_key = os.getenv("OPENAI_API_KEY") or os.getenv("GITHUB_TOKEN")
             base_url = os.getenv("GITHUB_BASE_URL", "https://models.github.ai/inference")
 
+        # Recall relevant memories for personalisation
+        memory_context = ""
+        try:
+            from app.core.memory.semantic_memory import SemanticMemory
+            mem = SemanticMemory()
+            recent = mem.recall_memories(user_id, message, k=3)
+            if recent:
+                snippets = [m["text"][:120] for m in recent]
+                memory_context = (
+                    "\n\nUser history (use this to personalise your response):\n"
+                    + "\n".join(f"- {s}" for s in snippets)
+                )
+        except Exception as exc:
+            logger.debug("Memory recall skipped in quick chat: %s", exc)
+
         system_prompt = (
             "You are a friendly, knowledgeable health coach for preventive health "
             "(hypertension and type 2 diabetes) in African settings. "
@@ -148,19 +182,24 @@ class ChatOrchestrator:
             "NEVER diagnose or prescribe medication. "
             "If the user describes urgent symptoms (chest pain, stroke signs), "
             "tell them to seek emergency care immediately."
+            + memory_context
         )
+
+        # Build messages array with conversation history
+        messages = [{"role": "system", "content": system_prompt}]
+        if history:
+            # Include last 5 exchanges (10 messages) for context
+            messages.extend(history[-10:])
+        messages.append({"role": "user", "content": message})
 
         resp = httpx.post(
             f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json={
                 "model": model,
-                "temperature": 0.4,
+                "temperature": 0.3,
                 "max_tokens": 1024,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": message},
-                ],
+                "messages": messages,
             },
             timeout=25.0,
         )
