@@ -8,20 +8,16 @@ motor>=3.3.0
 beanie>=1.25.0
 
 # Vector DB & RAG
+# NOTE: sentence-transformers pulls PyTorch (~2GB). The Dockerfile installs
+# CPU-only torch first to save ~1.6GB. Do NOT add torch here.
 chromadb>=0.4.22
 sentence-transformers>=2.3.0
-
-# Agent framework
-crewai>=0.80.0
-google-genai
-# NOTE: sentence-transformers pulls PyTorch (~2GB). For faster installs use CPU-only:
-#   pip install torch --index-url https://download.pytorch.org/whl/cpu
 # Cognee>=0.1.0
 
 # Agent framework
+# langchain is managed transitively by crewai — no need to pin separately
 crewai>=0.80.0
 google-generativeai  # Used by llm_extractor.py for Gemini provider
-# langchain is managed transitively by crewai — no need to pin separately
 
 # Redis (rate limiter backend, optional)
 redis>=5.0.0
@@ -29,15 +25,13 @@ redis>=5.0.0
 # Auth
 firebase-admin>=6.4.0
 
-# Rate limiting & caching
+# Rate limiting
 slowapi>=0.1.9
-redis>=5.0.0
 
 # Utils
 opik>=0.1.0
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
-httpx>=0.26.0
 httpx>=0.26.0
 
 # ---------- Dev / Test (move to requirements-dev.txt for production) ----------

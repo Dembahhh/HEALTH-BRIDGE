@@ -1,8 +1,15 @@
 import axios from 'axios';
 import { auth } from './firebase';
 
+// When VITE_API_URL is explicitly empty (Docker/nginx), use relative URL so
+// requests go through the nginx proxy at /api/. When undefined (local dev),
+// fall back to localhost:8000.
+const apiBase = import.meta.env.VITE_API_URL !== undefined
+    ? import.meta.env.VITE_API_URL
+    : 'http://localhost:8000';
+
 const api = axios.create({
-    baseURL: `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api`,
+    baseURL: `${apiBase}/api`,
     headers: {
         'Content-Type': 'application/json',
     },

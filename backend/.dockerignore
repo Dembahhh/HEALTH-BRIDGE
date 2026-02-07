@@ -1,4 +1,4 @@
-__pycache__
+__pycache__/
 *.pyc
 *.pyo
 .env
@@ -9,6 +9,13 @@ venv/
 data/
 *.egg-info/
 .pytest_cache/
+.mypy_cache/
 .git/
 .gitignore
 node_modules/
+tests/
+docs/
+*.md
+!README.md
+Dockerfile
+docker-compose.yml
