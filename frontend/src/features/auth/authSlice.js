@@ -1,7 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from 'firebase/auth';
 import { auth, googleProvider } from '../../services/firebase';
-import api from '../../services/api';
 
 // Async Thunks
 export const loginWithGoogle = createAsyncThunk(
@@ -162,13 +161,6 @@ export const initAuthListener = (dispatch) => {
                 },
                 token
             }));
-
-            // Set token for axios API calls
-            api.interceptors.request.use((config) => {
-                config.headers.Authorization = `Bearer ${token}`;
-                return config;
-            });
-
         } else {
             dispatch(setUser({ user: null, token: null }));
         }

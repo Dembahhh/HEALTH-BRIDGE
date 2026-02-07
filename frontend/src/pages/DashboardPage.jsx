@@ -6,17 +6,38 @@ import ProfileForm from '../features/profile/ProfileForm';
 import { Link, useNavigate } from 'react-router-dom';
 import ThemeToggle from '../components/ThemeToggle';
 import { MessageSquare, User, Activity, LogOut, ChevronRight } from 'lucide-react';
+import { chatApi } from '../services/api';
 
 export default function DashboardPage() {
   const dispatch = useDispatch();
   const { user } = useSelector((state) => state.auth);
   const { data: profile, loading } = useSelector((state) => state.profile);
   const [isEditing, setIsEditing] = useState(false);
+  const [assessmentCount, setAssessmentCount] = useState(0);
+  const [assessmentsLoading, setAssessmentsLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
     dispatch(fetchProfile());
   }, [dispatch]);
+
+  useEffect(() => {
+    const fetchAssessments = async () => {
+      try {
+        const response = await chatApi.getSessions();
+        setAssessmentCount(response.data.sessions.length);
+      } catch (error) {
+        console.error('Failed to fetch assessment count. Displaying default message:', error);
+        setAssessmentCount(0);
+      } finally {
+        setAssessmentsLoading(false);
+      }
+    };
+    
+    if (user) {
+      fetchAssessments();
+    }
+  }, [user]);
 
   useEffect(() => {
     if (!loading && user?.uid) {
@@ -215,7 +236,7 @@ export default function DashboardPage() {
             {[
               { icon: Activity, label: 'Activity', value: profile.activity_level || 'Not set', color: 'var(--color-primary)' },
               { icon: User, label: 'Age Group', value: profile.age_band || 'Not set', color: 'var(--color-accent)' },
-              { icon: MessageSquare, label: 'Assessments', value: 'Start your first', color: 'var(--color-accent-dark)' },
+              { icon: MessageSquare, label: 'Assessments', value: assessmentsLoading ? '...' : assessmentCount === 0 ? 'Start your first' : `${assessmentCount} completed`, color: 'var(--color-accent-dark)' },
             ].map((stat, idx) => (
               <div key={idx} className="rounded-xl p-5"
                 style={{
