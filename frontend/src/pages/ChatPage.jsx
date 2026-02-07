@@ -1,20 +1,24 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import ThemeToggle from '../components/ThemeToggle';
-import { ArrowLeft, Send, Sparkles, User } from 'lucide-react';
+import { ArrowLeft, Send, Sparkles, RotateCcw } from 'lucide-react';
+import { chatApi } from '../services/api';
+
+const INITIAL_MESSAGE = {
+    role: 'assistant',
+    content: "Hello! I'm your AI health coach. I'm here to help you understand your health better and provide personalized recommendations. How can I assist you today?"
+};
 
 export default function ChatPage() {
     const { user } = useSelector((state) => state.auth);
-    const [messages, setMessages] = useState([
-        {
-            role: 'assistant',
-            content: "Hello! I'm your AI health coach. I'm here to help you understand your health better and provide personalized recommendations. How can I assist you today?"
-        }
-    ]);
+    const [messages, setMessages] = useState([INITIAL_MESSAGE]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [sessionId, setSessionId] = useState(() => localStorage.getItem('chatSessionId'));
+    const [error, setError] = useState(null);
     const messagesEndRef = useRef(null);
+    const sessionInitialized = useRef(false);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -24,29 +28,123 @@ export default function ChatPage() {
         scrollToBottom();
     }, [messages]);
 
+    // Initialize or restore chat session
+    const initializeSession = useCallback(async () => {
+        if (sessionInitialized.current) return;
+        sessionInitialized.current = true;
+
+        console.log('[ChatPage] Initializing session, existing sessionId:', sessionId);
+
+        try {
+            // If we have a stored session, try to load its messages
+            if (sessionId) {
+                console.log('[ChatPage] Loading existing session messages...');
+                const response = await chatApi.getSessionMessages(sessionId);
+                if (response.data.messages && response.data.messages.length > 0) {
+                    setMessages(response.data.messages.map(msg => ({
+                        role: msg.role,
+                        content: msg.content
+                    })));
+                    console.log('[ChatPage] Loaded', response.data.messages.length, 'messages');
+                    return;
+                }
+            }
+            // Create a new session if none exists
+            console.log('[ChatPage] Creating new session...');
+            const response = await chatApi.createSession('general');
+            const newSessionId = response.data.session_id;
+            console.log('[ChatPage] Created session:', newSessionId);
+            setSessionId(newSessionId);
+            localStorage.setItem('chatSessionId', newSessionId);
+        } catch (err) {
+            console.error('[ChatPage] Failed to initialize session:', err);
+            setError('Failed to initialize chat session. Please refresh.');
+            // If session restoration fails (e.g., invalid session), create a new one
+            if (sessionId) {
+                localStorage.removeItem('chatSessionId');
+                setSessionId(null);
+                sessionInitialized.current = false;
+            }
+        }
+    }, [sessionId]);
+
+    useEffect(() => {
+        initializeSession();
+    }, [initializeSession]);
+
     const handleSend = async () => {
+        console.log('[ChatPage] handleSend called, input:', input, 'isLoading:', isLoading);
         if (!input.trim() || isLoading) return;
 
         const userMessage = { role: 'user', content: input };
         setMessages(prev => [...prev, userMessage]);
+        const currentInput = input;
         setInput('');
         setIsLoading(true);
+        setError(null);
 
-        // Simulate AI response (replace with actual API call)
-        setTimeout(() => {
+        try {
+            // Ensure we have a session
+            let currentSessionId = sessionId;
+            console.log('[ChatPage] Current sessionId:', currentSessionId);
+
+            if (!currentSessionId) {
+                console.log('[ChatPage] No session, creating one...');
+                const sessionResponse = await chatApi.createSession('general');
+                currentSessionId = sessionResponse.data.session_id;
+                console.log('[ChatPage] Created session:', currentSessionId);
+                setSessionId(currentSessionId);
+                localStorage.setItem('chatSessionId', currentSessionId);
+            }
+
+            // Send message to backend (using quick mode for fast responses)
+            console.log('[ChatPage] Sending message to session:', currentSessionId);
+            const response = await chatApi.sendQuickMessage(currentSessionId, currentInput);
+            console.log('[ChatPage] Got response:', response.data);
+
             const aiResponse = {
                 role: 'assistant',
-                content: "Thank you for sharing that with me. Based on your profile and what you've told me, I'd recommend focusing on regular physical activity and maintaining a balanced diet. Would you like more specific recommendations?"
+                content: response.data.content
             };
             setMessages(prev => [...prev, aiResponse]);
+        } catch (err) {
+            console.error('[ChatPage] Failed to send message:', err);
+            const errorMessage = err.response?.data?.detail || 'Failed to get response. Please try again.';
+            setError(errorMessage);
+
+            // If session is invalid, clear it and retry
+            if (err.response?.status === 404 || err.response?.status === 403) {
+                localStorage.removeItem('chatSessionId');
+                setSessionId(null);
+                sessionInitialized.current = false;
+            }
+        } finally {
             setIsLoading(false);
-        }, 1500);
+        }
     };
 
     const handleKeyPress = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             handleSend();
+        }
+    };
+
+    const handleNewChat = async () => {
+        try {
+            localStorage.removeItem('chatSessionId');
+            setSessionId(null);
+            setMessages([INITIAL_MESSAGE]);
+            setError(null);
+            sessionInitialized.current = false;
+
+            const response = await chatApi.createSession('general');
+            const newSessionId = response.data.session_id;
+            setSessionId(newSessionId);
+            localStorage.setItem('chatSessionId', newSessionId);
+        } catch (err) {
+            console.error('Failed to create new session:', err);
+            setError('Failed to start new chat. Please try again.');
         }
     };
 
@@ -75,7 +173,17 @@ export default function ChatPage() {
                         </div>
                     </div>
                 </div>
-                <ThemeToggle />
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleNewChat}
+                        className="p-2 rounded-lg transition-colors hover:bg-opacity-80"
+                        style={{ color: 'var(--text-secondary)' }}
+                        title="New Chat"
+                    >
+                        <RotateCcw className="w-5 h-5" />
+                    </button>
+                    <ThemeToggle />
+                </div>
             </header>
 
             {/* Messages */}
@@ -134,6 +242,20 @@ export default function ChatPage() {
                                     <div className="w-2 h-2 rounded-full animate-bounce" style={{ background: 'var(--color-primary)', animationDelay: '300ms' }} />
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Error display */}
+                {error && (
+                    <div className="flex justify-center animate-fadeIn">
+                        <div className="px-4 py-2 rounded-lg text-sm"
+                            style={{
+                                background: 'var(--color-error, #ef4444)',
+                                color: 'white',
+                                opacity: 0.9
+                            }}>
+                            {error}
                         </div>
                     </div>
                 )}

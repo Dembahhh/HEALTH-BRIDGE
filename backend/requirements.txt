@@ -27,6 +27,9 @@ redis>=5.0.0
 # Auth
 firebase-admin>=6.4.0
 
+# Rate limiting
+slowapi>=0.1.9
+
 # Utils
 opik
 pydantic>=2.5.0

@@ -4,8 +4,12 @@ Application Settings
 Environment-based configuration using Pydantic Settings.
 """
 
-from typing import List
+import logging
+from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import model_validator
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -28,6 +32,9 @@ class Settings(BaseSettings):
 
     # ChromaDB
     CHROMA_PERSIST_DIR: str = "./data/chroma"
+    CHROMA_MODE: str = "persistent"  # "persistent" (SQLite) or "http" (server)
+    CHROMA_HOST: str = "localhost"
+    CHROMA_PORT: int = 8001
 
     # LLM
     LLM_PROVIDER: str = "github"
@@ -43,11 +50,37 @@ class Settings(BaseSettings):
     # Firebase
     FIREBASE_CREDENTIALS_PATH: str = "./firebase-credentials.json"
 
+    # Auth
+    SKIP_AUTH: bool = False
+    ALLOW_DEV_TOKEN: bool = False
+    DEV_TOKEN: Optional[str] = None
+
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # CORS
     CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000"]
+
+    @model_validator(mode="after")
+    def _validate_auth_settings(self) -> "Settings":
+        """Block dangerous auth settings outside development."""
+        if self.SKIP_AUTH and self.ENV != "development":
+            raise ValueError(
+                "SKIP_AUTH=true is only allowed when ENV=development. "
+                f"Current ENV={self.ENV!r}. "
+                "Remove SKIP_AUTH or set ENV=development."
+            )
+        if self.ALLOW_DEV_TOKEN and self.ENV != "development":
+            raise ValueError(
+                "ALLOW_DEV_TOKEN=true is only allowed when ENV=development. "
+                f"Current ENV={self.ENV!r}."
+            )
+        if self.SKIP_AUTH:
+            logger.warning(
+                "SKIP_AUTH=true - authentication is BYPASSED. "
+                "Do NOT use this in production."
+            )
+        return self
 
 
 settings = Settings()

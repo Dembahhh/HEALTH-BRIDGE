@@ -5,7 +5,7 @@ MongoDB document models for chat sessions and messages.
 """
 
 from datetime import datetime
-from typing import Optional, List, Literal
+from typing import Optional, List
 from beanie import Document, Indexed
 from pydantic import Field
 
@@ -14,15 +14,14 @@ class ChatMessage(Document):
     """Individual chat message."""
 
     session_id: Indexed(str)
-    user_id: Indexed(str)
-
-    role: Literal["user", "assistant", "system"] = "user"
+    role: str  # user, assistant
     content: str
 
-    # Optional metadata
-    agent_name: Optional[str] = None  # Which agent responded
-    tokens_used: Optional[int] = None
+    # Agent metadata
+    agent_name: Optional[str] = None  # Which agent generated this
+    tool_calls: Optional[List[dict]] = None  # Tool calls made
 
+    # Timestamps
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Settings:
@@ -30,19 +29,17 @@ class ChatMessage(Document):
 
 
 class ChatSession(Document):
-    """Chat session containing multiple messages."""
+    """Chat session document model."""
 
     user_id: Indexed(str)  # Reference to User.firebase_uid
+    session_id: Indexed(str, unique=True)  # Unique session identifier
 
-    session_type: Literal["intake", "follow_up", "general"] = "general"
-    status: Literal["active", "completed", "abandoned"] = "active"
+    # Session metadata
+    session_type: str = "general"  # intake, follow_up, general
+    is_active: bool = True
 
-    # Summary for context
-    summary: Optional[str] = None
-
-    # Generated outputs (references)
-    habit_plan_id: Optional[str] = None  # Reference to HabitPlan if generated
-    risk_assessment: Optional[dict] = None  # Inline risk data
+    # Context
+    context_summary: Optional[str] = None
 
     # Timestamps
     created_at: datetime = Field(default_factory=datetime.utcnow)
