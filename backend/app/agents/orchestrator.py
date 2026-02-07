@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 # Thread pool for blocking CrewAI calls
 _executor = ThreadPoolExecutor(max_workers=3)
 
+# Auto-routing configuration
+INTENT_WORD_COUNT_THRESHOLD = 20  # Messages under this length default to quick pipeline
+
 
 class ChatOrchestrator:
     """
@@ -73,8 +76,8 @@ class ChatOrchestrator:
         if any(signal in text for signal in quick_signals):
             return "quick"
         
-        # Default: if message is short (<20 words), quick; otherwise full
-        if len(text.split()) < 20:
+        # Default: if message is short (<INTENT_WORD_COUNT_THRESHOLD words), quick; otherwise full
+        if len(text.split()) < INTENT_WORD_COUNT_THRESHOLD:
             return "quick"
         return "full"
 

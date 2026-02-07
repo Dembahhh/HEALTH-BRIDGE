@@ -8,7 +8,7 @@ import logging
 from typing import Optional, List
 from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime, timedelta
 
 from app.api.deps import CurrentUser
@@ -80,8 +80,15 @@ class FeedbackRequest(BaseModel):
     """Request to submit feedback on a message."""
     message_id: str = Field(..., min_length=1)
     session_id: str = Field(..., min_length=1)
-    rating: int = Field(..., ge=-1, le=1, description="1 = thumbs up, -1 = thumbs down")
+    rating: int = Field(..., description="1 = thumbs up, -1 = thumbs down")
     comment: Optional[str] = Field(None, max_length=500)
+    
+    @field_validator("rating")
+    @classmethod
+    def validate_rating(cls, v):
+        if v not in [-1, 1]:
+            raise ValueError("Rating must be either -1 (thumbs down) or 1 (thumbs up)")
+        return v
 
 
 class FeedbackResponse(BaseModel):

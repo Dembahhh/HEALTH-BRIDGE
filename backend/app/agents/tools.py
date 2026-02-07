@@ -21,6 +21,9 @@ from app.core.config import tracked
 
 logger = logging.getLogger(__name__)
 
+# Constants for tool behavior
+DEFAULT_SOURCE_ID_PREFIX = "SRC"  # Prefix for auto-generated source IDs
+
 
 def with_timeout(seconds: int = 30):
     """Decorator to add timeout to tool functions."""
@@ -200,7 +203,7 @@ def retrieve_guidelines(query: str, condition: Optional[str] = None, topic: Opti
         # Build formatted output with source IDs for citation
         formatted_lines = []
         for idx, r in enumerate(results):
-            source_id = r.get("metadata", {}).get("chunk_id", f"SRC-{idx+1}")
+            source_id = r.get("metadata", {}).get("chunk_id", f"{DEFAULT_SOURCE_ID_PREFIX}-{idx+1}")
             source_name = r.get("metadata", {}).get("source", "Unknown Source")
             condition = r.get("metadata", {}).get("condition", "")
             topic = r.get("metadata", {}).get("topic", "")
