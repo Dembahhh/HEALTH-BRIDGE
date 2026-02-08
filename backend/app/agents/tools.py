@@ -21,6 +21,9 @@ from app.core.config import tracked
 
 logger = logging.getLogger(__name__)
 
+# Constants for tool behavior
+DEFAULT_SOURCE_ID_PREFIX = "SRC"  # Prefix for auto-generated source IDs
+
 
 def with_timeout(seconds: int = 30):
     """Decorator to add timeout to tool functions."""
@@ -105,7 +108,7 @@ def get_rag_retriever():
             from app.core.rag.retriever import get_retriever
             _retriever = get_retriever()
         except Exception as e:
-            print(f"Warning: RAG Retriever init failed: {e}")
+            logger.warning("RAG Retriever init failed: %s", e)
             _retriever = None
         _retriever_initialized = True
     return _retriever
@@ -197,8 +200,26 @@ def retrieve_guidelines(query: str, condition: Optional[str] = None, topic: Opti
             if retry_results:
                 results = retry_results
 
-        formatted = "\n".join([f"- {r['content']} (Score: {r['relevance_score']:.2f})" for r in results])
-        return f"Guideline Results:\n{formatted}"
+        # Build formatted output with source IDs for citation
+        formatted_lines = []
+        for idx, r in enumerate(results):
+            source_id = r.get("metadata", {}).get("chunk_id", f"{DEFAULT_SOURCE_ID_PREFIX}-{idx+1}")
+            source_name = r.get("metadata", {}).get("source", "Unknown Source")
+            condition = r.get("metadata", {}).get("condition", "")
+            topic = r.get("metadata", {}).get("topic", "")
+            score = r['relevance_score']
+            content = r['content']
+            
+            formatted_lines.append(
+                f"[{source_id}] ({source_name} | {condition} | {topic} | Score: {score:.2f})\n"
+                f"  {content}"
+            )
+
+        return (
+            "Guideline Results (cite these sources using their [SOURCE_ID]):\n\n"
+            + "\n\n".join(formatted_lines)
+            + "\n\nIMPORTANT: When making claims, include the [SOURCE_ID] as a citation."
+        )
     except (ConnectionError, OSError) as e:
         logger.warning(f"RAG connection error: {e}")
         return "Guideline lookup temporarily unavailable - please proceed with general knowledge."

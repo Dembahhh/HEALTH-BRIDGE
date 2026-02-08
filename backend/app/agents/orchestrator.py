@@ -9,7 +9,7 @@ Fetches user HealthProfile for personalized responses and classifies question ty
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from uuid import uuid4
 
 from app.models.profile import HealthProfile
@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 # Thread pool for blocking CrewAI calls
 _executor = ThreadPoolExecutor(max_workers=3)
 
+# Auto-routing configuration
+INTENT_WORD_COUNT_THRESHOLD = 20  # Messages under this length default to quick pipeline
+
 
 class ChatOrchestrator:
     """
@@ -31,6 +34,8 @@ class ChatOrchestrator:
     def __init__(self):
         self._sessions: Dict[str, SessionManager] = {}
         self._chat_service = ChatService()
+        # Per-session conversation history for quick chat (keeps last N exchanges)
+        self._quick_history: Dict[str, List[dict]] = {}
 
     def _get_or_create_session(
         self, user_id: str, session_id: str, session_type: str
@@ -42,6 +47,41 @@ class ChatOrchestrator:
                 use_llm=True,
             )
         return self._sessions[session_id]
+
+    @staticmethod
+    def _classify_intent(message: str) -> str:
+        """Classify user intent to route to quick or full pipeline.
+        
+        Returns:
+            'quick' for simple questions (educational, FAQs)
+            'full' for complex requests (intake, risk assessment, habit planning)
+        """
+        text = message.lower().strip()
+        
+        # Full pipeline signals — personal health data or action requests
+        full_signals = [
+            "i am", "i'm", "years old", "my age", "my weight", "i smoke",
+            "i drink", "my diet", "family history", "assess me", "check my risk",
+            "create a plan", "habit plan", "my health", "i weigh", "bmi",
+            "follow up", "follow-up", "progress", "update my", "check in",
+        ]
+        
+        # Quick signals — educational, simple questions
+        quick_signals = [
+            "what is", "what are", "how does", "tell me about", "explain",
+            "define", "difference between", "why is", "can you", "should i",
+            "is it", "how to", "tips for", "benefits of",
+        ]
+        
+        if any(signal in text for signal in full_signals):
+            return "full"
+        if any(signal in text for signal in quick_signals):
+            return "quick"
+        
+        # Default: if message is short (<INTENT_WORD_COUNT_THRESHOLD words), quick; otherwise full
+        if len(text.split()) < INTENT_WORD_COUNT_THRESHOLD:
+            return "quick"
+        return "full"
 
     # ------------------------------------------------------------------
     # Profile & Question Classification
@@ -336,11 +376,11 @@ class ChatOrchestrator:
         Quick single-turn response via a direct LLM call (no crew pipeline).
 
         Targets 2-5s response time instead of 30-60s for a full crew run.
-        Fetches the user's HealthProfile and classifies the question type
-        to deliver personalized, context-aware responses.
-        Injects cross-session conversation history for continuity.
         """
         loop = asyncio.get_event_loop()
+
+        # Get or create conversation history for this session
+        history = self._quick_history.get(session_id, [])
 
         try:
             # Fetch profile, conversation history, and classify question
@@ -353,26 +393,9 @@ class ChatOrchestrator:
             )
 
             response = await loop.run_in_executor(
-                _executor,
-                self._direct_llm_call,
-                message,
-                user_id,
-                profile_summary,
-                question_type,
-                conv_history,
+                _executor, self._direct_llm_call, message, user_id
             )
-
-            # Persist conversation entry on the profile
-            try:
-                if profile is None:
-                    # First-time user — create a new HealthProfile with this exchange
-                    profile = HealthProfile(user_id=user_id)
-                profile.append_conversation(message, response, question_type)
-                await profile.save()
-            except Exception as save_err:
-                logger.warning("Failed to save conversation history: %s", save_err)
-
-            return {"content": response, "agent_name": f"quick:{question_type}"}
+            return {"content": response, "agent_name": "quick"}
         except Exception as e:
             logger.error("Quick message error: %s", e, exc_info=True)
             return {
@@ -381,80 +404,8 @@ class ChatOrchestrator:
             }
 
     @staticmethod
-    def _direct_llm_call(
-        message: str,
-        user_id: str,
-        profile_summary: str = "",
-        question_type: str = "general_health",
-        conversation_history: list = None,
-    ) -> str:
-        """Single LLM call with profile-aware, question-typed system prompt and conversation history."""
-        import os
-
-        provider = os.getenv("LLM_PROVIDER", "github")
-
-        system_prompt = ChatOrchestrator._build_system_prompt(
-            question_type, profile_summary
-        )
-
-        if provider == "gemini":
-            return ChatOrchestrator._gemini_call(message, system_prompt, conversation_history)
-        else:
-            return ChatOrchestrator._openai_compatible_call(
-                message, system_prompt, provider, conversation_history
-            )
-
-    @staticmethod
-    def _gemini_call(
-        message: str, system_prompt: str, conversation_history: list = None
-    ) -> str:
-        """Direct Gemini call via the new google.genai SDK with optional conversation history."""
-        import os
-        from google import genai
-        from google.genai import types
-
-        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        client = genai.Client(api_key=api_key)
-
-        # Build contents list: history entries + current message
-        # Gemini uses "model" instead of "assistant"
-        contents = []
-        if conversation_history:
-            for msg in conversation_history:
-                role = "model" if msg["role"] == "assistant" else msg["role"]
-                contents.append(types.Content(
-                    role=role,
-                    parts=[types.Part(text=msg["content"])],
-                ))
-        contents.append(types.Content(
-            role="user",
-            parts=[types.Part(text=message)],
-        ))
-
-        logger.info(
-            "[Gemini] Sending request to gemini-2.0-flash-lite (history=%d msgs)...",
-            len(contents) - 1,
-        )
-
-        response = client.models.generate_content(
-            model="gemini-2.0-flash-lite",
-            contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                temperature=0.4,
-                max_output_tokens=1024,
-            ),
-        )
-
-        text = response.text
-        logger.info("[Gemini] Response received (%d chars)", len(text))
-        return text
-
-    @staticmethod
-    def _openai_compatible_call(
-        message: str, system_prompt: str, provider: str, conversation_history: list = None
-    ) -> str:
-        """Fallback for OpenAI-compatible providers (GitHub, OpenAI) with optional conversation history."""
+    def _direct_llm_call(message: str, user_id: str) -> str:
+        """Single LLM call via httpx — no CrewAI overhead."""
         import os
         import httpx
 
@@ -470,15 +421,13 @@ class ChatOrchestrator:
             api_key = os.getenv("OPENAI_API_KEY") or os.getenv("GITHUB_TOKEN")
             base_url = os.getenv("GITHUB_BASE_URL", "https://models.github.ai/inference")
 
-        # Build messages: system → history → current user message
-        messages = [{"role": "system", "content": system_prompt}]
-        if conversation_history:
-            messages.extend(conversation_history)
-        messages.append({"role": "user", "content": message})
-
-        logger.info(
-            "[%s] Sending request to %s (history=%d msgs)...",
-            provider.upper(), model, len(messages) - 2,
+        system_prompt = (
+            "You are a friendly, knowledgeable health coach for preventive health "
+            "(hypertension and type 2 diabetes) in African settings. "
+            "Give concise, practical, culturally sensitive advice. "
+            "NEVER diagnose or prescribe medication. "
+            "If the user describes urgent symptoms (chest pain, stroke signs), "
+            "tell them to seek emergency care immediately."
         )
 
         resp = httpx.post(
@@ -486,7 +435,7 @@ class ChatOrchestrator:
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json={
                 "model": model,
-                "temperature": 0.4,
+                "temperature": 0.3,
                 "max_tokens": 1024,
                 "messages": messages,
             },

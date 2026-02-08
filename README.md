@@ -279,6 +279,109 @@ npm run dev
 - Backend API: http://localhost:8000
 - API Docs: http://localhost:8000/docs
 
+## Alternative: Docker Deployment (Optional)
+
+If you prefer using Docker instead of the manual setup above, you can run the entire stack with Docker Compose.
+
+### Prerequisites for Docker
+- Docker and Docker Compose installed
+- `.env` files configured (see Configuration section above)
+
+### Quick Start with Docker
+
+```bash
+# 1. Ensure environment files are configured
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+# Edit both .env files with your API keys and Firebase config
+
+# 2. Start all services (backend, frontend, MongoDB, Redis)
+docker-compose up --build
+
+# 3. Access the application
+# Frontend: http://localhost
+# Backend API: http://localhost:8000
+# API Docs: http://localhost:8000/docs
+```
+
+### Docker Commands
+
+Run in the background:
+```bash
+docker-compose up --build -d
+```
+
+View logs:
+```bash
+docker-compose logs -f
+```
+
+Stop services:
+```bash
+docker-compose down
+```
+
+Stop and remove all data (including database volumes):
+```bash
+docker-compose down -v
+```
+
+### What's Included in Docker Setup
+- **Backend**: Python/FastAPI with CPU-optimized PyTorch (~1.8GB smaller)
+- **Frontend**: React app served by nginx with API proxying
+- **MongoDB 7**: Database with health checks and persistent storage
+- **Redis 7**: Caching layer with health checks
+- **ChromaDB**: Vector storage (persistent mode)
+
+**Note**: The Docker setup uses optimized images and includes all dependencies. Database data persists in Docker volumes across container restarts.
+
+## Production Deployment
+
+### ChromaDB Setup for Multi-Worker Deployment
+
+The application uses ChromaDB for vector storage. In development mode, it uses a persistent local file store. For production deployment with multiple FastAPI workers (to handle concurrent requests), you must use ChromaDB in HTTP mode with a standalone ChromaDB server to avoid database locking issues.
+
+#### Option 1: Development Mode (Single Worker)
+For local development or testing:
+
+```bash
+cd backend
+# Ensure CHROMA_MODE=persistent in .env (default)
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+#### Option 2: Production Mode (Multiple Workers)
+
+1. **Start ChromaDB service:**
+```bash
+cd backend
+docker-compose -f docker-compose.chromadb.yml up -d
+```
+
+2. **Set environment variables in `.env`:**
+```env
+CHROMA_MODE=http
+CHROMA_HOST=localhost
+CHROMA_PORT=8000
+CHROMA_AUTH_TOKEN=your-secure-token-here  # Optional but recommended
+```
+
+3. **Run FastAPI with multiple workers:**
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8001 --workers 4
+```
+
+Note: ChromaDB runs on port 8000 by default, so FastAPI should use a different port (e.g., 8001) in this setup.
+
+4. **Verify ChromaDB connectivity:**
+```bash
+curl http://localhost:8001/health/chromadb
+```
+
+#### Health Check Endpoints
+- `/health` - General API health status
+- `/health/chromadb` - ChromaDB connectivity and document count
+
 ## Multi-Agent System
 
 The system uses 5 specialized CrewAI agents:

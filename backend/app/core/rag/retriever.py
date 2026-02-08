@@ -6,12 +6,11 @@ Implements the RAG retrieval layer as specified:
 - Vector search with metadata filters (condition, topic)
 - Returns top-k relevant chunks
 - Supports pre-filtering by condition/topic
+- Environment-based client selection for production scalability
 """
 
 from typing import List, Dict, Any, Optional
-import os
 
-from app.config.settings import settings
 from app.core.rag.embeddings import get_embedding_client
 from app.core.rag.chunker import Chunk
 
@@ -38,6 +37,8 @@ class VectorRetriever:
             collection_name: Name of the ChromaDB collection
             persist_directory: Directory for persistent storage (ignored in HTTP mode)
         """
+        # Use the shared ChromaDB client singleton
+        # (handles HTTP vs persistent mode + directory creation via CHROMA_MODE setting)
         from app.core.chroma_client import get_chroma_client
 
         self.client = get_chroma_client()
