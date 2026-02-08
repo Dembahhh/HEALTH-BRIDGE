@@ -8,7 +8,6 @@ Provides:
 - configure_tracing() to be called at app startup
 """
 
-import os
 import logging
 from functools import wraps
 
@@ -19,12 +18,12 @@ _tracing_enabled = False
 
 
 def configure_tracing():
-    """Initialize Opik tracing from environment variables.
+    """Initialize Opik tracing from application settings (.env).
 
     Call this once at application startup (e.g. in main.py or app factory).
 
-    Environment variables:
-        TRACING_ENABLED: "true" to enable (default: "false")
+    Settings (loaded from .env via pydantic-settings):
+        TRACING_ENABLED: true to enable (default: false)
         OPIK_API_KEY: Opik API key
         OPIK_PROJECT_NAME: Opik project name
         OPIK_WORKSPACE: Opik workspace name
@@ -34,16 +33,18 @@ def configure_tracing():
     if _tracing_initialized:
         return
 
-    _tracing_enabled = os.getenv("TRACING_ENABLED", "false").lower() == "true"
+    from app.config.settings import settings
+
+    _tracing_enabled = settings.TRACING_ENABLED
     _tracing_initialized = True
 
     if not _tracing_enabled:
         logger.info("Tracing disabled (set TRACING_ENABLED=true to enable)")
         return
 
-    api_key = os.getenv("OPIK_API_KEY")
-    project = os.getenv("OPIK_PROJECT_NAME", "health-bridge")
-    workspace = os.getenv("OPIK_WORKSPACE", "default")
+    api_key = settings.OPIK_API_KEY
+    project = settings.OPIK_PROJECT_NAME
+    workspace = settings.OPIK_WORKSPACE
 
     if not api_key:
         logger.warning("TRACING_ENABLED=true but OPIK_API_KEY not set; tracing disabled")

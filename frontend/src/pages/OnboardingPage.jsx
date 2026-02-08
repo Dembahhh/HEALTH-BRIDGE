@@ -162,7 +162,7 @@ export default function OnboardingPage() {
                                 key={item.name}
                                 className="flex items-center p-4 rounded-xl cursor-pointer transition-all"
                                 style={{
-                                    background: item.checked ? 'rgba(241, 143, 46, 0.1)' : 'var(--bg-elevated)',
+                                    background: item.checked ? 'rgba(var(--color-primary-rgb), 0.1)' : 'var(--bg-elevated)',
                                     border: item.checked ? '2px solid var(--color-primary)' : '1px solid var(--border-color)'
                                 }}>
                                 <input

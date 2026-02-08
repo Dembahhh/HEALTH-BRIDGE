@@ -83,7 +83,7 @@ export default function DashboardPage() {
                 className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:scale-105"
                 style={{
                   color: 'var(--color-accent)',
-                  background: 'rgba(231, 70, 39, 0.1)'
+                  background: 'rgba(var(--color-accent-rgb), 0.1)'
                 }}>
                 <LogOut className="w-4 h-4" />
                 <span className="hidden sm:inline">Logout</span>
@@ -110,8 +110,8 @@ export default function DashboardPage() {
         {!profile && !loading && (
           <div className="mb-8 p-4 rounded-xl animate-fadeIn"
             style={{
-              background: 'rgba(241, 143, 46, 0.1)',
-              border: '1px solid rgba(241, 143, 46, 0.3)'
+              background: 'rgba(var(--color-primary-rgb), 0.1)',
+              border: '1px solid rgba(var(--color-primary-rgb), 0.3)'
             }}>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full flex items-center justify-center"
@@ -132,7 +132,7 @@ export default function DashboardPage() {
           <div className="rounded-2xl p-6 animate-fadeIn"
             style={{
               background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%)',
-              boxShadow: '0 10px 40px rgba(241, 143, 46, 0.3)'
+              boxShadow: '0 10px 40px rgba(var(--color-primary-rgb), 0.3)'
             }}>
             <div className="flex items-start justify-between">
               <div>
@@ -168,7 +168,7 @@ export default function DashboardPage() {
                   style={{ borderBottom: '1px solid var(--border-color)' }}>
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-                      style={{ background: 'rgba(241, 143, 46, 0.1)' }}>
+                      style={{ background: 'rgba(var(--color-primary-rgb), 0.1)' }}>
                       <User className="w-5 h-5" style={{ color: 'var(--color-primary)' }} />
                     </div>
                     <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Profile Summary</h3>
@@ -178,7 +178,7 @@ export default function DashboardPage() {
                     className="px-4 py-2 rounded-lg text-sm font-medium transition-all hover:scale-105"
                     style={{
                       color: 'var(--color-primary)',
-                      background: 'rgba(241, 143, 46, 0.1)'
+                      background: 'rgba(var(--color-primary-rgb), 0.1)'
                     }}>
                     Edit
                   </button>

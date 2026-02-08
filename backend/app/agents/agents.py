@@ -18,21 +18,22 @@ class HealthBridgeAgents:
         base_url = None
 
         env_var_map = {
+            "gemini": "GEMINI_API_KEY",
             "github": "GITHUB_TOKEN",
             "azure": "AZURE_OPENAI_API_KEY",
             "openai": "OPENAI_API_KEY",
-            "gemini": "GEMINI_API_KEY",
         }
 
-        if provider == "github":
+        if provider == "gemini":
+            api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+            # No base_url needed — CrewAI/litellm handles Gemini natively
+        elif provider == "github":
             api_key = os.getenv("GITHUB_TOKEN")
             base_url = os.getenv("GITHUB_BASE_URL", "https://models.github.ai/inference")
         elif provider == "azure":
             api_key = os.getenv("AZURE_OPENAI_API_KEY")
         elif provider == "openai":
             api_key = os.getenv("OPENAI_API_KEY")
-        elif provider == "gemini":
-            api_key = os.getenv("GEMINI_API_KEY")
 
         # Validate API key is present
         if not api_key:

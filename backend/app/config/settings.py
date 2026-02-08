@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # LLM
     LLM_PROVIDER: str = "github"
     LLM_MODEL: str = "openai/gpt-4o-mini"
-    LLM_TEMPERATURE: float = 1.0
+    LLM_TEMPERATURE: float = 0.3
     GOOGLE_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     SKIP_AUTH: bool = False
     ALLOW_DEV_TOKEN: bool = False
     DEV_TOKEN: Optional[str] = None
+
+    # Opik Tracing
+    TRACING_ENABLED: bool = False
+    OPIK_API_KEY: str = ""
+    OPIK_PROJECT_NAME: str = "health-bridge"
+    OPIK_WORKSPACE: str = "default"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"

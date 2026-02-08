@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from app.core.rag.indexer import GuidelineIndexer, SAMPLE_GUIDELINES
+from app.config.settings import settings
 
 
 def main():
@@ -31,12 +32,12 @@ def main():
     print("      Model loaded.")
 
     # Clear existing data
-    print("\n[1/3] Clearing existing index...")
+    print("\n[1/4] Clearing existing index...")
     indexer.clear()
     print("      Done.")
 
-    # Index sample guidelines one-by-one with progress
-    print(f"\n[2/3] Indexing {len(SAMPLE_GUIDELINES)} sample guidelines...")
+    # ---- Step 2: Embedded sample guidelines ----
+    print(f"\n[2/4] Indexing {len(SAMPLE_GUIDELINES)} embedded sample guidelines...")
     total_chunks = 0
     stats_per_doc = {}
     for i, (name, data) in enumerate(SAMPLE_GUIDELINES.items(), 1):
@@ -51,24 +52,32 @@ def main():
         total_chunks += num_chunks
         print(f"{num_chunks} chunks")
 
-    stats = {
-        "total_documents": len(SAMPLE_GUIDELINES),
-        "total_chunks": total_chunks,
-        "per_document": stats_per_doc,
-    }
-    print(f"      Indexed {stats['total_documents']} documents")
-    print(f"      Created {stats['total_chunks']} chunks")
+    print(f"      Indexed {len(SAMPLE_GUIDELINES)} documents, {total_chunks} chunks")
 
-    # Show breakdown
-    print("\n[3/3] Document breakdown:")
-    for name, count in stats["per_document"].items():
-        print(f"      - {name}: {count} chunks")
+    # ---- Step 3: Directory guideline files ----
+    guidelines_dir = os.path.join(
+        settings.CHROMA_PERSIST_DIR, "..", "guidelines"
+    )
+    print(f"\n[3/4] Indexing directory: {guidelines_dir}")
+    dir_stats = indexer.index_from_directory(guidelines_dir)
 
-    # Verify
-    print("\n" + "-" * 60)
+    if "error" in dir_stats:
+        print(f"      Warning: {dir_stats['error']}")
+    else:
+        print(f"      Files:  {dir_stats['files_processed']}")
+        print(f"      Chunks: {dir_stats['total_chunks']}")
+        for fname, info in dir_stats["per_file"].items():
+            print(
+                f"        - {fname}: {info['chunks']} chunks "
+                f"[{info['source']}/{info['condition']}/{info['topic']}]"
+            )
+        total_chunks += dir_stats["total_chunks"]
+
+    # ---- Step 4: Verify ----
+    print(f"\n[4/4] Verification:")
     collection_stats = indexer.get_stats()
-    print(f"  Collection: {collection_stats['name']}")
-    print(f"  Total indexed: {collection_stats['count']} chunks")
+    print(f"      Collection:      {collection_stats['name']}")
+    print(f"      Total indexed:   {collection_stats['count']} chunks")
     print("-" * 60)
 
     print("\n[SUCCESS] RAG setup complete!")

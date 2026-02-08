@@ -63,7 +63,12 @@ class HealthBridgeCrew:
         )
 
     def general_crew(self, user_input: str, user_id: str, memory_context: str = "") -> Crew:
-        """General questions: risk lookup -> safety check."""
+        """General questions: risk lookup -> safety check.
+
+        When memory_context includes a '## Your Health Profile' section, the
+        agent will reference the user's personal data to give a personalized
+        answer instead of generic advice.
+        """
 
         risk = self._agents.risk_guideline_agent()
         safety = self._agents.safety_policy_agent()
@@ -71,11 +76,25 @@ class HealthBridgeCrew:
         t_risk = tasks.risk_assessment_task(risk, context_tasks=[], memory_context=memory_context)
         t_safety = tasks.safety_review_task(safety, context_tasks=[t_risk])
 
-        # Override descriptions for general questions
+        # Build a profile-aware task description
+        profile_instruction = ""
+        if "## Your Health Profile" in memory_context:
+            profile_instruction = (
+                "IMPORTANT: The user has a health profile on file (included below). "
+                "You MUST reference their specific profile data (age, BMI, family history, "
+                "lifestyle factors, constraints) when answering. Do NOT give generic advice. "
+                "Personalize your answer to THEIR situation.\n\n"
+            )
+
         t_risk.description = (
-            f"The user asked: '{user_input}'\n"
+            f"The user asked: '{user_input}'\n\n"
+            f"{profile_instruction}"
             f"Use the 'Retrieve Guidelines' tool to find relevant information.\n"
-            f"Provide an educational, non-diagnostic answer.\n"
+            f"Provide an educational, non-diagnostic answer.\n\n"
+            f"RESPONSE FORMAT: Write in natural, flowing paragraphs. Do NOT use bullet points, "
+            f"numbered lists, asterisks, or markdown bold/italic formatting. Use short paragraphs "
+            f"(2-4 sentences each) separated by blank lines. Weave profile data naturally into "
+            f"sentences. Keep a warm, conversational tone.\n"
             f"\n{memory_context}"
         )
 

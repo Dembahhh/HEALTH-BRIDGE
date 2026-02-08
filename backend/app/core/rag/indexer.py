@@ -402,63 +402,110 @@ class GuidelineIndexer:
             "per_document": stats,
         }
 
+    @staticmethod
+    def _parse_filename_metadata(filename: str) -> dict:
+        """Parse source, condition, and topic from a guideline filename.
+
+        Expected convention: {source}_{condition}_{topic}.md
+        Examples:
+            who_hypertension_diet.md  -> source=WHO, condition=hypertension, topic=diet
+            moh_general_ncd_sdoh.md   -> source=MoH, condition=general_ncd, topic=sdoh
+            who_diabetes_activity.md  -> source=WHO, condition=diabetes, topic=activity
+
+        Falls back to defaults when the filename does not match.
+        """
+        stem = Path(filename).stem.lower()  # e.g. "who_hypertension_diet"
+        parts = stem.split("_")
+
+        source_map = {"who": "WHO", "moh": "MoH"}
+        condition_keywords = {"hypertension", "diabetes", "general"}
+        topic_keywords = {"diet", "activity", "red_flags", "sdoh", "risk_factors"}
+
+        source = "Unknown"
+        condition = "general_ncd"
+        topic = "general"
+
+        if parts:
+            source = source_map.get(parts[0], parts[0].upper())
+
+        # Scan remaining parts for condition and topic tokens
+        remaining = "_".join(parts[1:])  # e.g. "hypertension_diet" or "general_ncd_sdoh"
+        for kw in condition_keywords:
+            if kw in remaining:
+                condition = "general_ncd" if kw == "general" else kw
+                break
+        for kw in topic_keywords:
+            if kw in remaining:
+                topic = kw
+                break
+
+        return {"source": source, "condition": condition, "topic": topic}
+
     def index_from_directory(
         self,
         directory: str = None,
-        condition: str = "general_ncd",
-        topic: str = "general",
-        source: str = "Unknown",
+        condition: str = None,
+        topic: str = None,
+        source: str = None,
     ) -> dict:
-        """
-        Index all text/markdown files from a directory.
-        
+        """Index all .md and .txt guideline files from a directory.
+
+        Metadata (source, condition, topic) is auto-detected from filenames
+        when the naming convention ``{source}_{condition}_{topic}.md`` is used.
+        Explicit arguments override auto-detected values.
+
         Args:
-            directory: Path to directory with guideline files
-            condition: Default condition tag
-            topic: Default topic tag
-            source: Default source tag
-            
+            directory: Path to directory with guideline files.
+                       Defaults to ``data/guidelines/``.
+            condition: Override condition tag for every file.
+            topic:     Override topic tag for every file.
+            source:    Override source tag for every file.
+
         Returns:
-            Dictionary with indexing statistics
+            Dictionary with indexing statistics.
         """
         if directory is None:
             directory = os.path.join(
                 settings.CHROMA_PERSIST_DIR, "..", "guidelines"
             )
-        
+
         directory = Path(directory)
         if not directory.exists():
             return {"error": f"Directory not found: {directory}"}
-        
+
         stats = {}
         total_chunks = 0
-        
-        for file_path in directory.glob("*.md"):
+
+        for file_path in sorted(directory.glob("*.md")):
+            if file_path.name.lower() == "readme.md":
+                continue  # skip documentation
             content = file_path.read_text(encoding="utf-8")
-            
+            meta = self._parse_filename_metadata(file_path.name)
+
             num_chunks = self.index_guideline(
                 content=content,
-                condition=condition,
-                topic=topic,
-                source=source,
+                condition=condition or meta["condition"],
+                topic=topic or meta["topic"],
+                source=source or meta["source"],
             )
-            
-            stats[file_path.name] = num_chunks
+
+            stats[file_path.name] = {"chunks": num_chunks, **meta}
             total_chunks += num_chunks
-        
-        for file_path in directory.glob("*.txt"):
+
+        for file_path in sorted(directory.glob("*.txt")):
             content = file_path.read_text(encoding="utf-8")
-            
+            meta = self._parse_filename_metadata(file_path.name)
+
             num_chunks = self.index_guideline(
                 content=content,
-                condition=condition,
-                topic=topic,
-                source=source,
+                condition=condition or meta["condition"],
+                topic=topic or meta["topic"],
+                source=source or meta["source"],
             )
-            
-            stats[file_path.name] = num_chunks
+
+            stats[file_path.name] = {"chunks": num_chunks, **meta}
             total_chunks += num_chunks
-        
+
         return {
             "directory": str(directory),
             "files_processed": len(stats),
@@ -476,35 +523,50 @@ class GuidelineIndexer:
 
 
 def main():
-    """Run the indexer to populate ChromaDB with sample guidelines."""
-    print("🏥 Health-bridge AI Guideline Indexer")
+    """Run the indexer to populate ChromaDB with sample + directory guidelines."""
+    print("Health-bridge AI Guideline Indexer")
     print("=" * 50)
-    
+
     indexer = GuidelineIndexer()
-    
+
     # Clear existing data
-    print("\n📋 Clearing existing index...")
+    print("\nClearing existing index...")
     indexer.clear()
-    
-    # Index sample guidelines
-    print("\n📚 Indexing sample guidelines...")
-    stats = indexer.index_sample_guidelines()
-    
-    print(f"\n✅ Indexing complete!")
-    print(f"   Documents: {stats['total_documents']}")
-    print(f"   Chunks: {stats['total_chunks']}")
-    
-    print("\n📊 Per-document breakdown:")
-    for name, count in stats["per_document"].items():
-        print(f"   - {name}: {count} chunks")
-    
-    # Verify
-    print("\n🔍 Verification:")
+
+    # Index embedded sample guidelines
+    print("\nIndexing embedded sample guidelines...")
+    sample_stats = indexer.index_sample_guidelines()
+    print(f"  Documents: {sample_stats['total_documents']}")
+    print(f"  Chunks:    {sample_stats['total_chunks']}")
+
+    for name, count in sample_stats["per_document"].items():
+        print(f"    - {name}: {count} chunks")
+
+    # Index markdown files from data/guidelines/
+    guidelines_dir = os.path.join(
+        settings.CHROMA_PERSIST_DIR, "..", "guidelines"
+    )
+    print(f"\nIndexing directory: {guidelines_dir}")
+    dir_stats = indexer.index_from_directory(guidelines_dir)
+
+    if "error" in dir_stats:
+        print(f"  Warning: {dir_stats['error']}")
+    else:
+        print(f"  Files:  {dir_stats['files_processed']}")
+        print(f"  Chunks: {dir_stats['total_chunks']}")
+        for fname, info in dir_stats["per_file"].items():
+            print(
+                f"    - {fname}: {info['chunks']} chunks "
+                f"[{info['source']}/{info['condition']}/{info['topic']}]"
+            )
+
+    # Verify totals
+    print("\nVerification:")
     collection_stats = indexer.get_stats()
-    print(f"   Collection: {collection_stats['name']}")
-    print(f"   Total documents: {collection_stats['count']}")
-    
-    print("\n✨ Done! Guidelines are ready for RAG queries.")
+    print(f"  Collection:      {collection_stats['name']}")
+    print(f"  Total documents: {collection_stats['count']}")
+
+    print("\nDone! Guidelines are ready for RAG queries.")
 
 
 if __name__ == "__main__":

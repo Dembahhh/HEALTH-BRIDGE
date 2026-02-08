@@ -25,7 +25,7 @@ api.interceptors.request.use(async (config) => {
 export const chatApi = {
     createSession: (type = 'general') => api.post('/chat/session', { session_type: type }),
     // Quick chat - single LLM call, fast responses (2-5 seconds)
-    sendQuickMessage: (sessionId, content) => api.post('/chat/quick', { session_id: sessionId, content }, { timeout: 30000 }),
+    sendQuickMessage: (sessionId, content) => api.post('/chat/quick', { session_id: sessionId, content }, { timeout: 60000 }),
     // Full agent crew - comprehensive analysis (30-60+ seconds)
     sendMessage: (sessionId, content) => api.post('/chat/message', { session_id: sessionId, content }, { timeout: 120000 }),
     getSessionMessages: (sessionId) => api.get(`/chat/session/${sessionId}/messages`),

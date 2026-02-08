@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from app.api.deps import CurrentUser
 from app.models.chat import ChatSession, ChatMessage
 from app.models.plan import HabitPlan, Habit
+from app.models.profile import HealthProfile
 from app.core.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
@@ -157,6 +158,8 @@ async def send_message(
     )
     session_type = session.session_type if session else "general"
 
+    logger.info(">>> USER INPUT [full] session=%s: %s", request_body.session_id, request_body.content)
+
     try:
         result = await orchestrator.process_message(
             user_id=uid,
@@ -167,6 +170,8 @@ async def send_message(
 
         agent_name = result.get("agent_name", "supervisor")
         content = result["content"]
+
+        logger.info("<<< LLM RESPONSE [full] agent=%s session=%s: %s", agent_name, request_body.session_id, content[:500])
 
         # Persist the assistant message
         saved = await _persist_message(
@@ -243,6 +248,8 @@ async def send_quick_message(
     # Persist the user message
     await _persist_message(request_body.session_id, "user", request_body.content)
 
+    logger.info(">>> USER INPUT [quick] session=%s: %s", request_body.session_id, request_body.content)
+
     try:
         result = await orchestrator.quick_message(
             user_id=uid,
@@ -252,6 +259,8 @@ async def send_quick_message(
 
         agent_name = result.get("agent_name", "quick")
         content = result["content"]
+
+        logger.info("<<< LLM RESPONSE [quick] agent=%s session=%s: %s", agent_name, request_body.session_id, content[:500])
 
         saved = await _persist_message(
             request_body.session_id, "assistant", content, agent_name
@@ -295,6 +304,18 @@ async def get_session_messages(
     current_user: CurrentUser,
 ):
     """Get all messages in a session from the database."""
+    uid = _uid(current_user)
+
+    # Verify the session belongs to the current user
+    session = await ChatSession.find_one(
+        ChatSession.session_id == session_id
+    )
+    if session and session.user_id != uid:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to this session",
+        )
+
     messages = await ChatMessage.find(
         ChatMessage.session_id == session_id
     ).sort("+created_at").to_list()
@@ -336,5 +357,31 @@ async def get_sessions(
                 updated_at=s.updated_at.isoformat(),
             ).model_dump()
             for s in sessions
+        ],
+    }
+
+
+@router.get("/history")
+@limiter.limit("30/minute")
+async def get_conversation_history(
+    request: Request,
+    current_user: CurrentUser,
+):
+    """Return the user's cross-session conversation history stored on their profile."""
+    uid = _uid(current_user)
+
+    profile = await HealthProfile.find_one(HealthProfile.user_id == uid)
+    if not profile:
+        return {"history": []}
+
+    return {
+        "history": [
+            {
+                "user_message": entry.user_message,
+                "assistant_message": entry.assistant_message,
+                "question_type": entry.question_type,
+                "timestamp": entry.timestamp.isoformat(),
+            }
+            for entry in profile.conversation_history
         ],
     }

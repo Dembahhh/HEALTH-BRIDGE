@@ -75,8 +75,8 @@ export default function SignupPage() {
                     {error && (
                         <div className="mb-6 px-4 py-3 rounded-xl text-sm"
                             style={{
-                                background: 'rgba(231, 70, 39, 0.1)',
-                                border: '1px solid rgba(231, 70, 39, 0.3)',
+                                background: 'rgba(var(--color-accent-rgb), 0.1)',
+                                border: '1px solid rgba(var(--color-accent-rgb), 0.3)',
                                 color: 'var(--color-accent)'
                             }}>
                             {error}

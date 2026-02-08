@@ -244,6 +244,7 @@ class ChatService:
         session_type: str = "intake",
         detected_fields: Optional[Dict] = None,
         conversation_history: Optional[List[str]] = None,
+        profile_summary: str = "",
         use_cognee: bool = True,
     ) -> ChatServiceResult:
         """
@@ -252,6 +253,11 @@ class ChatService:
         Supports:
         - Cognee graph memory when MEMORY_BACKEND=cognee
         - Parallel Risk+SDOH execution when PARALLEL_CREW=true (intake only)
+
+        Args:
+            profile_summary: Pre-fetched HealthProfile summary from MongoDB.
+                Prepended to memory_context so crew agents can reference
+                the user's authoritative profile data.
         """
         # Check if Cognee should be used
         use_cognee_memory = use_cognee and os.getenv("MEMORY_BACKEND", "semantic").lower() == "cognee"
@@ -262,9 +268,13 @@ class ChatService:
         else:
             memory_context = self._recall_context(user_id, user_input)
 
+        # Prepend authoritative profile from MongoDB (if available)
+        if profile_summary:
+            memory_context = profile_summary + "\n\n" + memory_context
+
         # Auto-detect session type if the caller passed the default
         if session_type == "general":
-            has_profile = "[profile]" in memory_context or "## User Profile" in memory_context
+            has_profile = "[profile]" in memory_context or "## Your Health Profile" in memory_context or "## User Profile" in memory_context
             session_type = self._detect_session_type(user_input, has_profile)
 
         # Parallel execution for intake when enabled

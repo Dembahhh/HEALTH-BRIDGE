@@ -62,33 +62,33 @@ class LLMExtractor:
         
         if api_key:
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=api_key)
-                
-                # Try different model names
+                from google import genai
+
+                self._genai_client = genai.Client(api_key=api_key)
+
+                # Try different model names (lite first to save quota)
                 models_to_try = [
-                    "gemini-1.5-flash-latest",
+                    "gemini-2.0-flash-lite",
+                    "gemini-2.0-flash",
                     "gemini-1.5-flash",
-                    "gemini-1.5-pro-latest", 
-                    "gemini-1.5-pro",
-                    "gemini-pro",
                 ]
-                
+
                 for model_name in models_to_try:
                     try:
-                        self.llm_client = genai.GenerativeModel(model_name)
-                        # Quick test
-                        response = self.llm_client.generate_content("Say 'ok'")
+                        response = self._genai_client.models.generate_content(
+                            model=model_name, contents="Say 'ok'"
+                        )
                         if response.text:
                             self.llm_available = True
                             self.llm_type = "gemini"
+                            self._gemini_model = model_name
                             print(f"✅ LLM Extractor: Using {model_name}")
                             return
-                    except Exception as model_error:
+                    except Exception:
                         continue
-                
+
                 print("⚠️ All Gemini models failed")
-                
+
             except Exception as e:
                 print(f"⚠️ Gemini init failed: {e}")
         
@@ -240,7 +240,9 @@ Fields: age (number), sex (male/female), conditions (list or "none"), family_his
 
         try:
             if self.llm_type == "gemini":
-                response = self.llm_client.generate_content(prompt)
+                response = self._genai_client.models.generate_content(
+                    model=self._gemini_model, contents=prompt
+                )
                 result_text = response.text
             else:
                 response = self.llm_client.chat.completions.create(

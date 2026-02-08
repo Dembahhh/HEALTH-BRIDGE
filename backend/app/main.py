@@ -4,6 +4,9 @@ Health-bridge AI - FastAPI Application
 Main entry point for the FastAPI application.
 """
 
+from dotenv import load_dotenv
+load_dotenv()  # populate os.environ from .env before any other imports
+
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
@@ -16,6 +19,13 @@ from app.config.settings import settings
 from app.config.database import init_db, close_db, get_database
 from app.api.routes import chat, profile, plans
 from app.core.rate_limit import limiter
+
+# Configure logging so INFO messages from our app show in the terminal
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
+    datefmt="%H:%M:%S",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +50,17 @@ async def lifespan(app: FastAPI):
 
     await init_db()
     logger.info("Database connected")
+
+    # Pre-initialize the LLM extractor + semantic matcher at startup
+    # so the first chat request isn't delayed by ~40s of model loading
+    try:
+        from app.services.llm_extractor import get_extractor
+        import asyncio
+        await asyncio.get_event_loop().run_in_executor(None, get_extractor, True)
+        logger.info("LLM Extractor pre-initialized")
+    except Exception as e:
+        logger.warning("LLM Extractor pre-init failed (will init on first request): %s", e)
+
     yield
     # Shutdown
     logger.info("Shutting down...")

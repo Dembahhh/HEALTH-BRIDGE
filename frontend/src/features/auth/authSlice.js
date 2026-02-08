@@ -71,6 +71,9 @@ export const signupWithEmail = createAsyncThunk(
 );
 
 export const logout = createAsyncThunk('auth/logout', async () => {
+    // Per-user localStorage keys (chatSessionId_<uid>) are kept intentionally
+    // so returning users see their previous conversations. The uid-scoped key
+    // already prevents cross-profile leakage.
     await signOut(auth);
 });
 

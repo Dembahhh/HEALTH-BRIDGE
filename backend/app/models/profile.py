@@ -20,6 +20,15 @@ class Constraints(BaseModel):
     additional_notes: Optional[str] = None
 
 
+class ConversationEntry(BaseModel):
+    """A single conversation exchange stored on the profile for cross-session memory."""
+
+    user_message: str  # truncated to 200 chars on append
+    assistant_message: str  # truncated to 300 chars on append
+    question_type: str = "general_health"
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
 class HealthProfile(Document):
     """User health profile document model."""
 
@@ -50,6 +59,9 @@ class HealthProfile(Document):
     # SDOH Constraints
     constraints: Constraints = Field(default_factory=Constraints)
 
+    # Cross-session conversation history (ring buffer, max 20 entries)
+    conversation_history: List[ConversationEntry] = Field(default_factory=list)
+
     # Timestamps
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -60,3 +72,30 @@ class HealthProfile(Document):
     def update_timestamp(self):
         """Update the updated_at timestamp."""
         self.updated_at = datetime.utcnow()
+
+    def append_conversation(
+        self,
+        user_msg: str,
+        assistant_msg: str,
+        question_type: str = "general_health",
+    ):
+        """Append a conversation entry, enforcing a 20-entry ring buffer cap."""
+        entry = ConversationEntry(
+            user_message=user_msg[:200],
+            assistant_message=assistant_msg[:300],
+            question_type=question_type,
+        )
+        self.conversation_history.append(entry)
+        # Keep only the most recent 20 entries
+        if len(self.conversation_history) > 20:
+            self.conversation_history = self.conversation_history[-20:]
+        self.update_timestamp()
+
+    def get_history_for_llm(self, max_entries: int = 10) -> List[dict]:
+        """Return recent conversation history as a list of role/content dicts for LLM context."""
+        recent = self.conversation_history[-max_entries:]
+        messages = []
+        for entry in recent:
+            messages.append({"role": "user", "content": entry.user_message})
+            messages.append({"role": "assistant", "content": entry.assistant_message})
+        return messages

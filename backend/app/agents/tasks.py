@@ -79,12 +79,16 @@ def habit_plan_task(agent, user_id: str, context_tasks: list) -> Task:
 def safety_review_task(agent, context_tasks: list) -> Task:
     return Task(
         description=(
-            "Review the Habit Plan from the previous task for safety.\n"
+            "Review the response from the previous task for safety.\n"
             "Check for: diagnostic claims, medication/dosage advice, "
             "missing escalation for dangerous symptoms.\n"
             "Use the 'Retrieve Guidelines' tool to verify red flag handling. "
             "Consider using topic='red_flags' to find clinical safety guidance.\n"
-            "If the plan is safe, return it as-is. If not, rewrite the unsafe parts."
+            "If the content is safe, return it as-is. If not, rewrite the unsafe parts.\n\n"
+            "FORMATTING: When writing revised_response, use natural flowing paragraphs. "
+            "Do NOT use bullet points, numbered lists, asterisks, or markdown bold/italic. "
+            "Use short paragraphs (2-4 sentences) separated by blank lines. "
+            "Keep a warm, conversational tone."
         ),
         agent=agent,
         context=context_tasks,

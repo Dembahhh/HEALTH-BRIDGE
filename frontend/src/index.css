@@ -59,6 +59,16 @@ body {
     --text-primary: var(--color-text-dark);
     --text-secondary: #6B6B6A;
     --text-muted: #8A8A89;
+
+    /* Dynamic accent (overridden by JS when accent changes) */
+    --color-primary: #F18F2E;
+    --color-primary-hover: #E07A1A;
+    --color-primary-light: #F9A94D;
+    --color-primary-rgb: 241, 143, 46;
+    --color-accent: #E74627;
+    --color-accent-hover: #D03A1D;
+    --color-accent-dark: #7D2817;
+    --color-accent-rgb: 231, 70, 39;
 }
 
 :root body {
@@ -83,6 +93,18 @@ body {
     color: var(--text-primary);
 }
 
+/* Purple Accent */
+:root.accent-purple {
+    --color-primary: #c548de;
+    --color-primary-hover: #b33acc;
+    --color-primary-light: #d16ee8;
+    --color-primary-rgb: 197, 72, 222;
+    --color-accent: #9b30c9;
+    --color-accent-hover: #8726b3;
+    --color-accent-dark: #5c1878;
+    --color-accent-rgb: 155, 48, 201;
+}
+
 /* ========================================
    COMPONENT STYLES
    ======================================== */
@@ -95,12 +117,12 @@ body {
     padding: 0.75rem 1.5rem;
     border-radius: 0.75rem;
     transition: all 0.2s ease;
-    box-shadow: 0 4px 14px 0 rgba(241, 143, 46, 0.25);
+    box-shadow: 0 4px 14px 0 rgba(var(--color-primary-rgb), 0.25);
 }
 
 .btn-primary:hover {
     transform: translateY(-1px);
-    box-shadow: 0 6px 20px 0 rgba(241, 143, 46, 0.35);
+    box-shadow: 0 6px 20px 0 rgba(var(--color-primary-rgb), 0.35);
 }
 
 .btn-secondary {
@@ -150,7 +172,7 @@ body {
 .input:focus {
     outline: none;
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px rgba(241, 143, 46, 0.15);
+    box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.15);
 }
 
 .input::placeholder {
@@ -197,11 +219,11 @@ body {
 
 /* Glow Effects */
 .glow-primary {
-    box-shadow: 0 0 30px rgba(241, 143, 46, 0.3);
+    box-shadow: 0 0 30px rgba(var(--color-primary-rgb), 0.3);
 }
 
 .glow-accent {
-    box-shadow: 0 0 30px rgba(231, 70, 39, 0.3);
+    box-shadow: 0 0 30px rgba(var(--color-accent-rgb), 0.3);
 }
 
 /* Animation */
@@ -225,11 +247,11 @@ body {
 
     0%,
     100% {
-        box-shadow: 0 0 20px rgba(241, 143, 46, 0.2);
+        box-shadow: 0 0 20px rgba(var(--color-primary-rgb), 0.2);
     }
 
     50% {
-        box-shadow: 0 0 40px rgba(241, 143, 46, 0.4);
+        box-shadow: 0 0 40px rgba(var(--color-primary-rgb), 0.4);
     }
 }
 
