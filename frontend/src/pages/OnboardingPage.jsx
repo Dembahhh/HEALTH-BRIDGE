@@ -41,13 +41,13 @@ export default function OnboardingPage() {
 
     const [currentStep, setCurrentStep] = useState(0);
     const [formData, setFormData] = useState({
-        age_band: '',
-        sex: '',
+        age_band: '18-29',
+        sex: 'male',
         family_history_hypertension: false,
         family_history_diabetes: false,
-        smoking_status: '',
-        alcohol_consumption: '',
-        activity_level: '',
+        smoking_status: 'never',
+        alcohol_consumption: 'none',
+        activity_level: 'sedentary',
     });
 
     const handleChange = (e) => {
@@ -56,23 +56,6 @@ export default function OnboardingPage() {
             ...prev,
             [name]: type === 'checkbox' ? checked : value,
         }));
-    };
-
-    const isStepValid = () => {
-        switch (steps[currentStep].id) {
-            case 'intro':
-                return true;
-            case 'demographics':
-                return formData.age_band !== '' && formData.sex !== '';
-            case 'history':
-                return true; // Checkboxes are optional
-            case 'lifestyle':
-                return formData.smoking_status !== '' && formData.alcohol_consumption !== '';
-            case 'activity':
-                return formData.activity_level !== '';
-            default:
-                return true;
-        }
     };
 
     const handleNext = () => {
@@ -140,7 +123,6 @@ export default function OnboardingPage() {
                                 className="input w-full"
                                 style={selectStyle}
                             >
-                                <option value="" disabled>Select your age group</option>
                                 <option value="18-29">18-29</option>
                                 <option value="30-39">30-39</option>
                                 <option value="40-49">40-49</option>
@@ -160,7 +142,6 @@ export default function OnboardingPage() {
                                 className="input w-full"
                                 style={selectStyle}
                             >
-                                <option value="" disabled>Select your sex</option>
                                 <option value="male">Male</option>
                                 <option value="female">Female</option>
                             </select>
@@ -218,7 +199,6 @@ export default function OnboardingPage() {
                                 className="input w-full"
                                 style={selectStyle}
                             >
-                                <option value="" disabled>Select your smoking status</option>
                                 <option value="never">Never Smoked</option>
                                 <option value="former">Former Smoker</option>
                                 <option value="current">Current Smoker</option>
@@ -236,7 +216,6 @@ export default function OnboardingPage() {
                                 className="input w-full"
                                 style={selectStyle}
                             >
-                                <option value="" disabled>Select your alcohol consumption</option>
                                 <option value="none">None</option>
                                 <option value="occasional">Occasional</option>
                                 <option value="regular">Regular</option>
@@ -262,7 +241,6 @@ export default function OnboardingPage() {
                                 className="input w-full"
                                 style={selectStyle}
                             >
-                                <option value="" disabled>Select your activity level</option>
                                 <option value="sedentary">Sedentary (Little to no exercise)</option>
                                 <option value="light">Light (1-3 days/week)</option>
                                 <option value="moderate">Moderate (3-5 days/week)</option>
@@ -358,8 +336,8 @@ export default function OnboardingPage() {
 
                         <button
                             onClick={handleNext}
-                            disabled={loading || !isStepValid()}
-                            className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={loading}
+                            className="btn-primary flex items-center gap-2"
                         >
                             {loading ? (
                                 <span className="flex items-center gap-2">

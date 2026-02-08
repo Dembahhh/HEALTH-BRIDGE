@@ -23,8 +23,8 @@ class HabitModel(BaseModel):
     """Individual habit."""
     title: str
     description: str
-    frequency: str  
-    category: str  
+    frequency: str  # daily, 3x_week, weekly
+    category: str  # diet, activity, stress, sleep
     difficulty: str = "easy"
 
 

@@ -10,11 +10,8 @@ Configuration via environment variable:
     MEMORY_BACKEND=cognee    (uses Cognee graph memory)
 """
 
-import logging
 import os
 from typing import Union, Optional
-
-logger = logging.getLogger(__name__)
 
 # Memory backend types
 BACKEND_SEMANTIC = "semantic"
@@ -40,7 +37,7 @@ def get_memory():
             from app.core.memory.cognee_memory import get_cognee_memory
             return get_cognee_memory()
         except ImportError:
-            logger.warning("Cognee not available, falling back to SemanticMemory")
+            print("⚠️ Cognee not available, falling back to SemanticMemory")
     
     # Default to SemanticMemory
     from app.core.memory.semantic_memory import SemanticMemory

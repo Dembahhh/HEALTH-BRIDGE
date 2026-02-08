@@ -413,11 +413,12 @@ Once you've received medical care, we can continue with your health plan."""
         
         # Build final response
         response_parts = []
-
-        # Format crew result into human-readable text (not raw JSON)
-        from app.services.response_formatter import ResponseFormatter
-        formatted = ResponseFormatter.format_crew_output(crew_result)
-        response_parts.append(formatted)
+        
+        # Add crew result
+        if hasattr(crew_result, 'raw'):
+            response_parts.append(str(crew_result.raw))
+        else:
+            response_parts.append(str(crew_result))
         
         # Add interventions for follow-up sessions
         if self.session_type == "follow_up" and self.interventions_generated:
@@ -481,7 +482,7 @@ Once you've received medical care, we can continue with your health plan."""
             )
             
         except Exception as e:
-            logger.warning("Failed to save to memory: %s", e)
+            print(f"Warning: Failed to save to memory: {e}")
     
     def get_combined_input(self) -> str:
         """Get combined user input for crew."""
