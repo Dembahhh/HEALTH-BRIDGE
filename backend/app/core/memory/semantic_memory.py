@@ -1,7 +1,7 @@
+import logging
 from chromadb.utils import embedding_functions
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +18,8 @@ class SemanticMemory:
     """
 
     def __init__(self):
+        # Use the shared ChromaDB client singleton
+        # (handles HTTP vs persistent mode via CHROMA_MODE setting)
         from app.core.chroma_client import get_chroma_client
 
         self.client = get_chroma_client()

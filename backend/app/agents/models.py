@@ -26,6 +26,14 @@ def strip_json_comments(json_str: str) -> str:
 
 # --- Core Models ---
 
+class Citation(BaseModel):
+    """A reference to a specific guideline source used for a claim."""
+    source_id: str = Field(..., description="Unique ID of the guideline chunk (e.g., 'WHO-HT-003')")
+    source_name: str = Field(..., description="Human-readable source name (e.g., 'WHO Hypertension Guidelines 2023')")
+    content_snippet: str = Field(..., description="The specific text from the guideline that supports the claim (max 200 chars)")
+    relevance_score: float = Field(..., description="How relevant this source was (0.0 to 1.0)")
+
+
 class Profile(BaseModel):
     """User health profile collected during intake."""
     age: int = Field(..., description="Age of the user")
@@ -62,6 +70,7 @@ class RiskAssessment(BaseModel):
     diabetes_risk: Literal["low", "moderate", "high"] = Field(..., description="Estimated risk band for type 2 diabetes")
     key_drivers: List[str] = Field(..., description="List of factors contributing to the risk")
     explanation: str = Field(..., description="User-friendly explanation of the risk profile")
+    citations: List[Citation] = Field(default_factory=list, description="Guidelines that support the risk assessment")
 
 class Constraints(BaseModel):
     """SDOH and environmental constraints."""
@@ -83,6 +92,7 @@ class HabitPlan(BaseModel):
     focus_areas: List[str] = Field(..., description="Main goals (e.g. 'Reduce salt', 'Increase movement')")
     habits: List[Habit] = Field(..., description="List of small habits to start")
     motivational_message: str = Field(..., description="Encouraging closing message")
+    citations: List[Citation] = Field(default_factory=list, description="Guidelines that support the habit recommendations")
 
     @field_validator("habits")
     @classmethod
@@ -96,6 +106,7 @@ class SafetyReview(BaseModel):
     is_safe: bool = Field(..., description="Is the content safe to show the user?")
     flagged_issues: List[str] = Field(default_factory=list, description="List of safety violations if any")
     revised_response: Optional[str] = Field(None, description="Rewritten response if edits were needed")
+    citations: List[Citation] = Field(default_factory=list, description="Guidelines referenced during safety review")
 
     @field_validator("revised_response", mode="before")
     @classmethod

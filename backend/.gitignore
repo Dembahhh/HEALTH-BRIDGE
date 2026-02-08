@@ -33,6 +33,10 @@ logs/
 htmlcov/
 .pytest_cache/
 
+# Test scripts (for development only)
+test_chromadb_*.py
+test_health_endpoints.py
+
 # Distribution
 dist/
 build/

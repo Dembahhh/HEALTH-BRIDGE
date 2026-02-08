@@ -86,6 +86,7 @@ body {
     --text-primary: var(--color-text-light);
     --text-secondary: #B5B5B4;
     --text-muted: #8A8A89;
+    --bg-surface-rgb: 29, 29, 28;
 }
 
 :root.dark body {

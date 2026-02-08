@@ -34,7 +34,8 @@ class Settings(BaseSettings):
     CHROMA_PERSIST_DIR: str = "./data/chroma"
     CHROMA_MODE: str = "persistent"  # "persistent" (SQLite) or "http" (server)
     CHROMA_HOST: str = "localhost"
-    CHROMA_PORT: int = 8001
+    CHROMA_PORT: int = 8000
+    CHROMA_AUTH_TOKEN: Optional[str] = None  # Optional token for HTTP mode auth
 
     # LLM
     LLM_PROVIDER: str = "github"
