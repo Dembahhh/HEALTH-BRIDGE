@@ -4,10 +4,11 @@ Application Settings
 Environment-based configuration using Pydantic Settings.
 """
 
+import json
 import logging
 from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import field_validator, model_validator
+from pydantic import model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -64,16 +65,18 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
 
-    # CORS
-    CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000", "http://localhost"]
+    # CORS — plain string to avoid pydantic-settings JSON parse issues
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000,http://localhost"
 
-    @field_validator("CORS_ORIGINS", mode="before")
-    @classmethod
-    def _parse_cors_origins(cls, v):
-        """Accept both JSON arrays and comma-separated strings."""
-        if isinstance(v, str) and not v.startswith("["):
-            return [o.strip() for o in v.split(",") if o.strip()]
-        return v
+    def get_cors_origins(self) -> List[str]:
+        """Parse CORS_ORIGINS into a list. Accepts JSON array or comma-separated."""
+        v = self.CORS_ORIGINS.strip()
+        if v.startswith("["):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                pass
+        return [o.strip() for o in v.split(",") if o.strip()]
 
     @model_validator(mode="after")
     def _validate_auth_settings(self) -> "Settings":
