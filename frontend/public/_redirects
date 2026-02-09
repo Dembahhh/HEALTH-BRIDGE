@@ -1,1 +1,6 @@
+# Proxy API requests to Render backend
+/api/*  https://health-bridge-x2.onrender.com/api/:splat  200
+/health  https://health-bridge-x2.onrender.com/health  200
+
+# SPA fallback (must be last)
 /*    /index.html   200

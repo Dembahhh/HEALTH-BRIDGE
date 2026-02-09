@@ -1,12 +1,20 @@
 import axios from 'axios';
 import { auth } from './firebase';
 
-// Use VITE_API_URL if set, otherwise fall back to localhost for local dev.
-// In Docker/nginx, set VITE_API_URL="" (empty string) to use relative paths.
-const envUrl = import.meta.env.VITE_API_URL;
-const baseURL = envUrl !== undefined && envUrl !== null
-    ? (envUrl === '' ? '/api' : envUrl)
-    : 'http://localhost:8000/api';
+// API base URL resolution:
+//   Local dev (.env):   VITE_API_URL=http://localhost:8000/api  → use directly
+//   Docker (nginx):     VITE_API_URL=""                         → /api (nginx proxies)
+//   Netlify (no var):   undefined                               → /api (Netlify _redirects proxies)
+let resolvedUrl = import.meta.env.VITE_API_URL;
+
+// Guard: strip accidental "VITE_API_URL=" prefix from value (common Netlify misconfiguration)
+if (typeof resolvedUrl === 'string' && resolvedUrl.startsWith('VITE_API_URL=')) {
+    resolvedUrl = resolvedUrl.slice('VITE_API_URL='.length);
+}
+
+const baseURL = (resolvedUrl !== undefined && resolvedUrl !== null && resolvedUrl !== '')
+    ? resolvedUrl
+    : '/api';
 
 const api = axios.create({
     baseURL,
