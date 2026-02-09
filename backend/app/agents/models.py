@@ -56,12 +56,22 @@ class Profile(BaseModel):
                 pass  # Let pydantic handle the error
         return data
 
+class Citation(BaseModel):
+    """A single citation from RAG retrieval."""
+    source_id: str = Field(..., description="Unique ID of the source document/chunk")
+    source_name: str = Field("", description="Human-readable source name (e.g. 'WHO Hypertension Guidelines')")
+    text_snippet: str = Field("", description="Relevant excerpt from the source")
+    condition: str = Field("", description="Related condition (e.g. 'hypertension', 'diabetes')")
+    topic: str = Field("", description="Topic area (e.g. 'risk_factors', 'management')")
+
+
 class RiskAssessment(BaseModel):
     """Risk analysis output from the Risk & Guideline Agent."""
     hypertension_risk: Literal["low", "moderate", "high"] = Field(..., description="Estimated risk band for hypertension")
     diabetes_risk: Literal["low", "moderate", "high"] = Field(..., description="Estimated risk band for type 2 diabetes")
     key_drivers: List[str] = Field(..., description="List of factors contributing to the risk")
     explanation: str = Field(..., description="User-friendly explanation of the risk profile")
+    citations: List[Citation] = Field(default_factory=list, description="RAG sources used for this assessment")
 
 class Constraints(BaseModel):
     """SDOH and environmental constraints."""
@@ -83,6 +93,7 @@ class HabitPlan(BaseModel):
     focus_areas: List[str] = Field(..., description="Main goals (e.g. 'Reduce salt', 'Increase movement')")
     habits: List[Habit] = Field(..., description="List of small habits to start")
     motivational_message: str = Field(..., description="Encouraging closing message")
+    citations: List[Citation] = Field(default_factory=list, description="RAG sources used for habit recommendations")
 
     @field_validator("habits")
     @classmethod
@@ -96,6 +107,7 @@ class SafetyReview(BaseModel):
     is_safe: bool = Field(..., description="Is the content safe to show the user?")
     flagged_issues: List[str] = Field(default_factory=list, description="List of safety violations if any")
     revised_response: Optional[str] = Field(None, description="Rewritten response if edits were needed")
+    citations: List[Citation] = Field(default_factory=list, description="RAG sources referenced in the review")
 
     @field_validator("revised_response", mode="before")
     @classmethod

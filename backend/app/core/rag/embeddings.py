@@ -1,44 +1,35 @@
 """
 Embedding Client
 
-Handles text embedding generation for RAG using SentenceTransformers.
+Handles text embedding generation for RAG using FastEmbed.
 Supports batch embedding for efficient indexing of guideline documents.
 """
 
-import os
-from typing import List, Optional
-from functools import lru_cache
-
-# Prevent PyTorch/tokenizers thread deadlocks on Windows
-os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-os.environ.setdefault("OMP_NUM_THREADS", "1")
-os.environ.setdefault("MKL_NUM_THREADS", "1")
+from typing import List, Optional, Generator
+import numpy as np
+from fastembed import TextEmbedding
 
 
 class EmbeddingClient:
     """
-    Client for generating text embeddings.
+    Client for generating text embeddings using FastEmbed.
 
-    Uses SentenceTransformers for local embedding generation.
-    Default model: all-MiniLM-L6-v2 (fast, good quality for semantic search)
-    Alternative: text-embedding-3-large via OpenAI API
+    Uses light-weight ONNX-based models (no PyTorch required).
+    Default model: BAAI/bge-small-en-v1.5 (fast, high performance)
     """
 
-    def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
+    def __init__(self, model_name: str = "BAAI/bge-small-en-v1.5"):
         """
         Initialize the embedding model.
 
         Args:
-            model_name: SentenceTransformer model name or path
+            model_name: FastEmbed model name
         """
-        import torch
-        torch.set_num_threads(1)
-
-        from sentence_transformers import SentenceTransformer
-
-        self.model = SentenceTransformer(model_name)
+        self.model = TextEmbedding(model_name=model_name)
         self.model_name = model_name
-        self.embedding_dim = self.model.get_sentence_embedding_dimension()
+        # FastEmbed doesn't expose dimension directly, but BGE-small is 384
+        # We can infer it from a dummy embedding if needed, or hardcode known models
+        self.embedding_dim = 384
 
     def embed(self, text: str) -> List[float]:
         """
@@ -50,8 +41,9 @@ class EmbeddingClient:
         Returns:
             List of floats representing the embedding vector
         """
-        embedding = self.model.encode(text, convert_to_numpy=True)
-        return embedding.tolist()
+        # embed returns a generator of numpy arrays
+        embeddings = list(self.model.embed([text]))
+        return embeddings[0].tolist()
 
     def embed_batch(self, texts: List[str], batch_size: int = 32) -> List[List[float]]:
         """
@@ -59,18 +51,13 @@ class EmbeddingClient:
         
         Args:
             texts: List of texts to embed
-            batch_size: Batch size for processing
+            batch_size: Batch size for processing (handled internally by FastEmbed)
             
         Returns:
             List of embedding vectors
         """
-        embeddings = self.model.encode(
-            texts,
-            batch_size=batch_size,
-            convert_to_numpy=True,
-            show_progress_bar=len(texts) > 100,
-        )
-        return embeddings.tolist()
+        embeddings = list(self.model.embed(texts, batch_size=batch_size))
+        return [e.tolist() for e in embeddings]
 
     def get_dimension(self) -> int:
         """Get the embedding dimension."""
@@ -81,7 +68,7 @@ class EmbeddingClient:
 _client: Optional[EmbeddingClient] = None
 
 
-def get_embedding_client(model_name: str = "all-MiniLM-L6-v2") -> EmbeddingClient:
+def get_embedding_client(model_name: str = "BAAI/bge-small-en-v1.5") -> EmbeddingClient:
     """
     Get or create the embedding client singleton.
     

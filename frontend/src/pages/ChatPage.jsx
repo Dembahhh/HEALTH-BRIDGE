@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
+import ReactMarkdown from 'react-markdown';
 import ThemeToggle from '../components/ThemeToggle';
 import { ArrowLeft, Send, Sparkles, RotateCcw } from 'lucide-react';
 import { chatApi } from '../services/api';
@@ -257,7 +258,13 @@ export default function ChatPage() {
                                         ? '1.25rem 1.25rem 0.25rem 1.25rem'
                                         : '1.25rem 1.25rem 1.25rem 0.25rem'
                                 }}>
-                                <p className="text-sm leading-relaxed">{message.content}</p>
+                                {message.role === 'assistant' ? (
+                                    <div className="text-sm leading-relaxed assistant-markdown">
+                                        <ReactMarkdown>{message.content}</ReactMarkdown>
+                                    </div>
+                                ) : (
+                                    <p className="text-sm leading-relaxed">{message.content}</p>
+                                )}
                             </div>
                         </div>
                     </div>

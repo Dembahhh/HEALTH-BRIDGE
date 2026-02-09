@@ -20,10 +20,10 @@ router = APIRouter()
 
 class ConstraintsModel(BaseModel):
     """SDOH constraints."""
-    exercise_safety: str = "safe"
-    income_band: str = "moderate"
-    food_access: str = "good"
-    time_availability: str = "moderate"
+    exercise_safety: Optional[str] = None
+    income_band: Optional[str] = None
+    food_access: Optional[str] = None
+    time_availability: Optional[str] = None
     additional_notes: Optional[str] = None
 
 
@@ -32,13 +32,13 @@ class ProfileResponse(BaseModel):
     photo_url: Optional[str] = None
     age_band: Optional[str] = None
     sex: Optional[str] = None
-    family_history_hypertension: bool = False
-    family_history_diabetes: bool = False
-    smoking_status: str = "never"
-    alcohol_consumption: str = "none"
-    bmi_category: str = "normal"
-    activity_level: str = "sedentary"
-    diet_pattern: str = "mixed"
+    family_history_hypertension: Optional[bool] = None
+    family_history_diabetes: Optional[bool] = None
+    smoking_status: Optional[str] = None
+    alcohol_consumption: Optional[str] = None
+    bmi_category: Optional[str] = None
+    activity_level: Optional[str] = None
+    diet_pattern: Optional[str] = None
     risk_bands: Optional[dict] = None
     top_risk_factors: Optional[List[str]] = None
     constraints: Optional[ConstraintsModel] = None

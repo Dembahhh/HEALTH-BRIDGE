@@ -32,7 +32,7 @@ async def init_db() -> None:
     from app.models.user import User
     from app.models.profile import HealthProfile
     from app.models.plan import HabitPlan
-    from app.models.chat import ChatSession, ChatMessage
+    from app.models.chat import ChatSession, ChatMessage, MessageFeedback
 
     await init_beanie(
         database=_client[settings.MONGODB_DB_NAME],
@@ -42,6 +42,7 @@ async def init_db() -> None:
             HabitPlan,
             ChatSession,
             ChatMessage,
+            MessageFeedback,
         ],
     )
 

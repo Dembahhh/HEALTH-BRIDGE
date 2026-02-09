@@ -258,3 +258,60 @@ body {
 .animate-pulse-glow {
     animation: pulse-glow 2s ease-in-out infinite;
 }
+
+/* ========================================
+   ASSISTANT MARKDOWN RENDERING
+   ======================================== */
+
+.assistant-markdown p {
+    margin-bottom: 0.5rem;
+}
+
+.assistant-markdown p:last-child {
+    margin-bottom: 0;
+}
+
+.assistant-markdown strong {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.assistant-markdown em {
+    font-style: italic;
+}
+
+.assistant-markdown ol {
+    list-style: decimal;
+    padding-left: 1.25rem;
+    margin-bottom: 0.5rem;
+}
+
+.assistant-markdown ul {
+    list-style: disc;
+    padding-left: 1.25rem;
+    margin-bottom: 0.5rem;
+}
+
+.assistant-markdown li {
+    margin-bottom: 0.25rem;
+}
+
+/* Citation / Sources section — rendered from the --- separator */
+.assistant-markdown hr {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 0.75rem 0 0.5rem;
+}
+
+.assistant-markdown hr+p,
+.assistant-markdown hr+p~ol,
+.assistant-markdown hr+p~p {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.assistant-markdown hr+p strong {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}

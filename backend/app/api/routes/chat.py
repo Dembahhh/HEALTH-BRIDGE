@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 
 from app.api.deps import CurrentUser
-from app.models.chat import ChatSession, ChatMessage
+from app.models.chat import ChatSession, ChatMessage, MessageFeedback
 from app.models.plan import HabitPlan, Habit
 from app.models.profile import HealthProfile
 from app.core.rate_limit import limiter
@@ -75,6 +75,20 @@ class SessionItem(BaseModel):
     is_active: bool
     created_at: str
     updated_at: str
+
+
+class FeedbackRequest(BaseModel):
+    """Request to submit feedback on a message."""
+    message_id: str = Field(..., min_length=1)
+    session_id: str = Field(..., min_length=1)
+    rating: int = Field(..., ge=1, le=5)
+    comment: Optional[str] = Field(None, max_length=1000)
+
+
+class AutoMessageRequest(BaseModel):
+    """Request for auto-routed message (quick vs full pipeline)."""
+    session_id: str = Field(..., min_length=1, max_length=100)
+    content: str = Field(..., min_length=1, max_length=5000)
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +193,7 @@ async def send_message(
         )
 
         # Auto-save HabitPlan if the crew extracted habits
-        if hasattr(result, "habits") and result.get("habits"):
+        if isinstance(result, dict) and result.get("habits"):
             habits = []
             for h in result["habits"]:
                 title = h.get("title") or h.get("action", "Habit")
@@ -385,3 +399,108 @@ async def get_conversation_history(
             for entry in profile.conversation_history
         ],
     }
+
+
+@router.post("/feedback")
+@limiter.limit("30/minute")
+async def submit_feedback(
+    request_body: FeedbackRequest,
+    request: Request,
+    current_user: CurrentUser,
+):
+    """Submit feedback (thumbs up/down) on an assistant message."""
+    uid = _uid(current_user)
+
+    feedback = MessageFeedback(
+        message_id=request_body.message_id,
+        session_id=request_body.session_id,
+        user_id=uid,
+        rating=request_body.rating,
+        comment=request_body.comment,
+    )
+    await feedback.insert()
+
+    logger.info(
+        "Feedback submitted: user=%s message=%s rating=%d",
+        uid, request_body.message_id, request_body.rating,
+    )
+
+    return {"status": "ok", "feedback_id": str(feedback.id)}
+
+
+@router.post("/auto", response_model=SendMessageResponse)
+@limiter.limit("30/minute")
+async def send_auto_message(
+    request_body: AutoMessageRequest,
+    request: Request,
+    current_user: CurrentUser,
+):
+    """Auto-route a message: use quick chat for simple questions,
+    full crew pipeline for complex ones requiring multi-agent analysis."""
+    from app.agents import get_orchestrator
+
+    uid = _uid(current_user)
+    orchestrator = get_orchestrator()
+
+    # Persist the user message
+    await _persist_message(request_body.session_id, "user", request_body.content)
+
+    # Classify the question to decide routing
+    question_type = orchestrator._classify_question(request_body.content)
+
+    # Route: complex questions go to full pipeline, simple ones to quick
+    use_full_pipeline = question_type in ("risk_assessment", "personalized")
+
+    logger.info(
+        "Auto-route: user=%s type=%s pipeline=%s session=%s",
+        uid, question_type, "full" if use_full_pipeline else "quick",
+        request_body.session_id,
+    )
+
+    try:
+        if use_full_pipeline:
+            session = await ChatSession.find_one(
+                ChatSession.session_id == request_body.session_id
+            )
+            session_type = session.session_type if session else "general"
+
+            result = await orchestrator.process_message(
+                user_id=uid,
+                session_id=request_body.session_id,
+                message=request_body.content,
+                session_type=session_type,
+            )
+        else:
+            result = await orchestrator.quick_message(
+                user_id=uid,
+                session_id=request_body.session_id,
+                message=request_body.content,
+            )
+
+        agent_name = result.get("agent_name", "auto")
+        content = result["content"]
+
+        saved = await _persist_message(
+            request_body.session_id, "assistant", content, agent_name
+        )
+
+        return SendMessageResponse(
+            message_id=str(saved.id),
+            content=content,
+            agent_name=agent_name,
+        )
+    except Exception as e:
+        logger.error(
+            "Auto chat error for user=%s session=%s: %s",
+            uid, request_body.session_id, e, exc_info=True,
+        )
+
+        fallback = "I'm sorry, I encountered an issue. Please try again."
+        saved = await _persist_message(
+            request_body.session_id, "assistant", fallback, "system"
+        )
+        return SendMessageResponse(
+            message_id=str(saved.id),
+            content=fallback,
+            agent_name="system",
+        )
