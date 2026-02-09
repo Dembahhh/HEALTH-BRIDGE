@@ -14,7 +14,6 @@ from uuid import uuid4
 
 from app.models.profile import HealthProfile
 from app.services.session_manager import SessionManager
-from app.services.chat import ChatService
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +28,7 @@ class ChatOrchestrator:
     """
 
     def __init__(self):
+        from app.services.chat import ChatService
         self._sessions: Dict[str, SessionManager] = {}
         self._chat_service = ChatService()
 
@@ -49,26 +49,37 @@ class ChatOrchestrator:
 
     @staticmethod
     def _build_profile_summary(profile: HealthProfile) -> str:
-        """Format a HealthProfile object as a readable summary string."""
+        """Format a HealthProfile object as a readable summary string.
+
+        Only includes fields the user has explicitly provided (non-None).
+        This prevents the LLM from treating default values as user-provided data.
+        """
         parts = ["## Your Health Profile"]
 
         if profile.age_band:
             parts.append(f"- Age group: {profile.age_band}")
         if profile.sex:
             parts.append(f"- Sex: {profile.sex}")
-        parts.append(f"- BMI category: {profile.bmi_category}")
-        parts.append(f"- Activity level: {profile.activity_level}")
-        parts.append(f"- Diet pattern: {profile.diet_pattern}")
-        parts.append(f"- Smoking status: {profile.smoking_status}")
-        parts.append(f"- Alcohol consumption: {profile.alcohol_consumption}")
-        parts.append(
-            f"- Family history of hypertension: "
-            f"{'Yes' if profile.family_history_hypertension else 'No'}"
-        )
-        parts.append(
-            f"- Family history of diabetes: "
-            f"{'Yes' if profile.family_history_diabetes else 'No'}"
-        )
+        if profile.bmi_category is not None:
+            parts.append(f"- BMI category: {profile.bmi_category}")
+        if profile.activity_level is not None:
+            parts.append(f"- Activity level: {profile.activity_level}")
+        if profile.diet_pattern is not None:
+            parts.append(f"- Diet pattern: {profile.diet_pattern}")
+        if profile.smoking_status is not None:
+            parts.append(f"- Smoking status: {profile.smoking_status}")
+        if profile.alcohol_consumption is not None:
+            parts.append(f"- Alcohol consumption: {profile.alcohol_consumption}")
+        if profile.family_history_hypertension is not None:
+            parts.append(
+                f"- Family history of hypertension: "
+                f"{'Yes' if profile.family_history_hypertension else 'No'}"
+            )
+        if profile.family_history_diabetes is not None:
+            parts.append(
+                f"- Family history of diabetes: "
+                f"{'Yes' if profile.family_history_diabetes else 'No'}"
+            )
 
         if profile.risk_bands:
             parts.append(f"- Risk assessment: {profile.risk_bands}")
@@ -77,12 +88,20 @@ class ChatOrchestrator:
 
         if profile.constraints:
             c = profile.constraints
-            parts.append(f"- Exercise safety: {c.exercise_safety}")
-            parts.append(f"- Income band: {c.income_band}")
-            parts.append(f"- Food access: {c.food_access}")
-            parts.append(f"- Time availability: {c.time_availability}")
+            if c.exercise_safety is not None:
+                parts.append(f"- Exercise safety: {c.exercise_safety}")
+            if c.income_band is not None:
+                parts.append(f"- Income band: {c.income_band}")
+            if c.food_access is not None:
+                parts.append(f"- Food access: {c.food_access}")
+            if c.time_availability is not None:
+                parts.append(f"- Time availability: {c.time_availability}")
             if c.additional_notes:
                 parts.append(f"- Additional notes: {c.additional_notes}")
+
+        # If only the header was added, the user has no profile data yet
+        if len(parts) == 1:
+            return ""
 
         return "\n".join(parts)
 

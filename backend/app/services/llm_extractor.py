@@ -12,9 +12,12 @@ This ensures the system NEVER fails to understand reasonable user inputs.
 import os
 import json
 import re
+import logging
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class ExtractionResult:
@@ -58,7 +61,7 @@ class LLMExtractor:
     def _init_llm(self):
         """Initialize LLM client with proper error handling."""
         # Try Gemini
-        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         
         if api_key:
             try:
@@ -82,22 +85,23 @@ class LLMExtractor:
                             self.llm_available = True
                             self.llm_type = "gemini"
                             self._gemini_model = model_name
-                            print(f"✅ LLM Extractor: Using {model_name}")
+                            logger.info(f"LLM Extractor: Using {model_name}")
                             return
                     except Exception:
                         continue
 
-                print("⚠️ All Gemini models failed")
+                logger.warning("All Gemini models failed")
 
             except Exception as e:
-                print(f"⚠️ Gemini init failed: {e}")
+                logger.warning(f"Gemini init failed: {e}")
         
-        # Try OpenAI
-        openai_key = os.getenv("OPENAI_API_KEY")
-        if openai_key and not openai_key.startswith("sk-proj"):  # Skip if placeholder
+        # Try OpenAI — skip empty or placeholder keys
+        openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+        _is_placeholder = not openai_key or openai_key.startswith("your_") or len(openai_key) < 10
+        if openai_key and not _is_placeholder:
             try:
                 from openai import OpenAI
-                self.llm_client = OpenAI()
+                self.llm_client = OpenAI(api_key=openai_key)
                 # Test
                 response = self.llm_client.chat.completions.create(
                     model="gpt-3.5-turbo",
@@ -106,21 +110,21 @@ class LLMExtractor:
                 )
                 self.llm_available = True
                 self.llm_type = "openai"
-                print("✅ LLM Extractor: Using OpenAI")
+                logger.info("LLM Extractor: Using OpenAI")
                 return
             except Exception as e:
-                print(f"⚠️ OpenAI init failed: {e}")
+                logger.warning(f"OpenAI init failed: {e}")
         
-        print("ℹ️ LLM unavailable, using semantic + regex")
+        logger.info("LLM unavailable for extractor, using semantic + regex fallback")
     
     def _init_semantic_matcher(self):
         """Initialize semantic matcher."""
         try:
             from app.services.semantic_matcher import get_semantic_matcher
             self.semantic_matcher = get_semantic_matcher(use_embeddings=True)
-            print("✅ Semantic Matcher: Initialized")
+            logger.info("Semantic Matcher: Initialized")
         except Exception as e:
-            print(f"⚠️ Semantic matcher init failed: {e}")
+            logger.warning(f"Semantic matcher init failed: {e}")
             self.semantic_matcher = None
     
     def extract_all(
@@ -133,8 +137,6 @@ class LLMExtractor:
         Extract all fields using SMART routing:
         1. Try semantic/regex FIRST for simple inputs (no API cost)
         2. Only use LLM for complex, multi-field messages
-
-        This saves 80%+ of API calls while maintaining accuracy.
         """
         # Always check urgent symptoms first
         urgent = self._detect_urgent_symptoms(message)
@@ -153,7 +155,7 @@ class LLMExtractor:
                     if max_confidence >= 0.7 or is_simple:
                         return result
             except Exception as e:
-                print(f"Semantic extraction failed: {e}")
+                logger.debug(f"Semantic extraction failed: {e}")
 
         # Layer 2: Try LLM only for complex/ambiguous inputs
         if self.llm_available and self.use_llm and not is_simple:
@@ -162,49 +164,37 @@ class LLMExtractor:
                 if result.fields:
                     return result
             except Exception as e:
-                print(f"LLM extraction failed: {e}")
+                logger.error(f"LLM extraction failed: {e}")
 
         # Layer 3: Regex fallback (always available)
         return self._extract_with_regex(message, last_question_field, urgent)
 
     def _is_simple_input(self, message: str) -> bool:
-        """
-        Detect if input is simple enough for semantic/regex only.
-        Simple inputs don't need expensive LLM calls.
-
-        Simple = single field, short response, common patterns like:
-        - "yes", "no", "none"
-        - "45" (age)
-        - "male", "female"
-        - "I don't smoke"
-        """
+        """Detect if input is simple enough for semantic/regex only."""
         msg = message.lower().strip()
         word_count = len(msg.split())
 
-        # Very short responses are almost always simple
         if word_count <= 3:
             return True
 
-        # Common simple patterns that semantic/regex handles well
         simple_patterns = [
             r"^(yes|no|yeah|yep|nope|nah|none|male|female|m|f)$",
-            r"^\d{1,3}$",  # Just a number (age)
-            r"^i'?m\s+\d{1,3}$",  # "I'm 45"
-            r"^(i\s+)?(don'?t|never|no)\s+(smoke|drink)\s*\w*$",  # "I don't smoke cigarettes"
-            r"^(i\s+)?(have\s+)?(never)\s+(smoked|drank|touched)",  # "I have never smoked"
+            r"^\d{1,3}$",
+            r"^i'?m\s+\d{1,3}$",
+            r"^(i\s+)?(don'?t|never|no)\s+(smoke|drink)\s*\w*$",
+            r"^(i\s+)?(have\s+)?(never)\s+(smoked|drank|touched)",
             r"^(i\s+)?(smoke|drink)\s*(occasionally|sometimes|daily|regularly)?$",
-            r"^(sedentary|active|moderate|light)$",  # Activity levels
-            r"^no\s*(one|body|history|issues?|problems?|conditions?)$",  # "no history"
-            r"^(former|ex|quit|stopped)\s",  # "former smoker", "quit smoking"
-            r"^(healthy|fine|good|okay|ok)$",  # Health status answers
-            r"^not?\s*(really|much|often|at all)$",  # "not really", "not much"
+            r"^(sedentary|active|moderate|light)$",
+            r"^no\s*(one|body|history|issues?|problems?|conditions?)$",
+            r"^(former|ex|quit|stopped)\s",
+            r"^(healthy|fine|good|okay|ok)$",
+            r"^not?\s*(really|much|often|at all)$",
         ]
 
         for pattern in simple_patterns:
             if re.search(pattern, msg):
                 return True
 
-        # Short messages without complex structure (no lists)
         if word_count <= 6 and "," not in msg and " and " not in msg:
             return True
 
@@ -253,7 +243,6 @@ Fields: age (number), sex (male/female), conditions (list or "none"), family_his
                 )
                 result_text = response.choices[0].message.content
             
-            # Parse JSON
             result_text = self._clean_json(result_text)
             parsed = json.loads(result_text)
             
@@ -287,8 +276,6 @@ Fields: age (number), sex (male/female), conditions (list or "none"), family_his
     ) -> FullExtractionResult:
         """Extract using semantic matcher."""
         fields = {}
-        
-        # Use semantic matcher
         matches = self.semantic_matcher.extract_all_fields(message, last_question_field)
         
         for field_name, match in matches.items():
@@ -301,7 +288,6 @@ Fields: age (number), sex (male/female), conditions (list or "none"), family_his
                 source=f"semantic_{match.method}"
             )
         
-        # Extract implied information
         implied = {}
         msg_lower = message.lower()
         
@@ -329,7 +315,6 @@ Fields: age (number), sex (male/female), conditions (list or "none"), family_his
         fields = {}
         msg_lower = message.lower().strip()
         
-        # Age
         age_patterns = [
             (r"\b(\d{1,3})\s*(years?\s*old|y/?o|yrs?)\b", lambda m: int(m.group(1))),
             (r"\b(?:i'?m|i am)\s*(\d{2,3})\b", lambda m: int(m.group(1))),
@@ -351,7 +336,6 @@ Fields: age (number), sex (male/female), conditions (list or "none"), family_his
                 except:
                     continue
         
-        # Sex
         if re.search(r"\b(male|man|boy|guy)\b", msg_lower):
             fields["sex"] = ExtractionResult("sex", "male", 0.9, False, None, "regex")
         elif re.search(r"\b(female|woman|girl|lady)\b", msg_lower):
@@ -359,7 +343,6 @@ Fields: age (number), sex (male/female), conditions (list or "none"), family_his
         elif last_question_field == "sex" and msg_lower in ["m", "f"]:
             fields["sex"] = ExtractionResult("sex", "male" if msg_lower == "m" else "female", 0.9, False, None, "regex")
         
-        # Conditions - comprehensive none detection
         none_patterns = [
             r"^\s*(no|none|nope|nah)\s*$",
             r"\b(none|no|not)\s*(that)?\s*(i|we)?\s*(know|aware|have|think)\b",
@@ -376,7 +359,6 @@ Fields: age (number), sex (male/female), conditions (list or "none"), family_his
         elif is_none and last_question_field in ["smoking", "alcohol"]:
             fields[last_question_field] = ExtractionResult(last_question_field, "no", 0.85, False, None, "regex")
         
-        # Conditions detection
         conditions = []
         if re.search(r"\b(hypertension|high\s*blood\s*pressure|high\s*bp|hbp)\b", msg_lower):
             conditions.append("hypertension")
@@ -396,7 +378,6 @@ Fields: age (number), sex (male/female), conditions (list or "none"), family_his
         if conditions:
             fields["conditions"] = ExtractionResult("conditions", conditions, 0.8, False, None, "regex")
         
-        # Smoking
         if re.search(r"\b(don'?t|never|no)\s*smok", msg_lower):
             fields["smoking"] = ExtractionResult("smoking", "no", 0.85, False, None, "regex")
         elif re.search(r"\b(quit|stopped|former)\b", msg_lower):
@@ -404,7 +385,6 @@ Fields: age (number), sex (male/female), conditions (list or "none"), family_his
         elif re.search(r"\bsmok", msg_lower):
             fields["smoking"] = ExtractionResult("smoking", "yes", 0.7, False, None, "regex")
         
-        # Alcohol
         if re.search(r"\b(don'?t|never|no)\s*drink", msg_lower):
             fields["alcohol"] = ExtractionResult("alcohol", "no", 0.85, False, None, "regex")
         elif re.search(r"\b(occasional|sometimes|social|rarely)\b", msg_lower):
@@ -412,11 +392,9 @@ Fields: age (number), sex (male/female), conditions (list or "none"), family_his
         elif re.search(r"\b(regular|daily|often)\b", msg_lower):
             fields["alcohol"] = ExtractionResult("alcohol", "regularly", 0.8, False, None, "regex")
         
-        implied = {}
-        
         return FullExtractionResult(
             fields=fields,
-            implied=implied,
+            implied={},
             urgent_symptoms=urgent_symptoms,
             raw_text=""
         )

@@ -7,7 +7,7 @@ Environment-based configuration using Pydantic Settings.
 import logging
 from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,15 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # CORS
-    CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000"]
+    CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000", "http://localhost"]
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def _parse_cors_origins(cls, v):
+        """Accept both JSON arrays and comma-separated strings."""
+        if isinstance(v, str) and not v.startswith("["):
+            return [o.strip() for o in v.split(",") if o.strip()]
+        return v
 
     @model_validator(mode="after")
     def _validate_auth_settings(self) -> "Settings":

@@ -13,10 +13,10 @@ from pydantic import Field, BaseModel
 class Constraints(BaseModel):
     """Social Determinants of Health (SDOH) constraints."""
 
-    exercise_safety: str = "safe"  # safe, unsafe_at_night, unsafe
-    income_band: str = "moderate"  # low, moderate, high
-    food_access: str = "good"  # limited_fresh, moderate, good
-    time_availability: str = "moderate"  # limited, moderate, flexible
+    exercise_safety: Optional[str] = None  # safe, unsafe_at_night, unsafe
+    income_band: Optional[str] = None  # low, moderate, high
+    food_access: Optional[str] = None  # limited_fresh, moderate, good
+    time_availability: Optional[str] = None  # limited, moderate, flexible
     additional_notes: Optional[str] = None
 
 
@@ -40,17 +40,17 @@ class HealthProfile(Document):
     sex: Optional[str] = None  # male, female
 
     # Health history
-    family_history_hypertension: bool = False
-    family_history_diabetes: bool = False
-    smoking_status: str = "never"  # never, former, current
-    alcohol_consumption: str = "none"  # none, occasional, regular
+    family_history_hypertension: Optional[bool] = None
+    family_history_diabetes: Optional[bool] = None
+    smoking_status: Optional[str] = None  # never, former, current
+    alcohol_consumption: Optional[str] = None  # none, occasional, regular
 
     # Physical metrics
-    bmi_category: str = "normal"  # underweight, normal, overweight, obese
+    bmi_category: Optional[str] = None  # underweight, normal, overweight, obese
 
     # Lifestyle
-    activity_level: str = "sedentary"  # sedentary, light, moderate, active
-    diet_pattern: str = "mixed"  # high_salt, high_sugar, mixed, healthy
+    activity_level: Optional[str] = None  # sedentary, light, moderate, active
+    diet_pattern: Optional[str] = None  # high_salt, high_sugar, mixed, healthy
 
     # Risk assessment (computed by Risk Agent)
     risk_bands: Optional[dict] = None  # {"hypertension": "moderate", "diabetes": "low"}

@@ -28,6 +28,20 @@ class ChatMessage(Document):
         name = "chat_messages"
 
 
+class MessageFeedback(Document):
+    """User feedback on a specific assistant message."""
+
+    message_id: str  # Reference to ChatMessage
+    session_id: Indexed(str)
+    user_id: Indexed(str)
+    rating: int  # 1-5
+    comment: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Settings:
+        name = "message_feedback"
+
+
 class ChatSession(Document):
     """Chat session document model."""
 

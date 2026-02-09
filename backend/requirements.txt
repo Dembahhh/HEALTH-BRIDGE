@@ -9,31 +9,33 @@ beanie>=1.25.0
 
 # Vector DB & RAG
 chromadb>=0.4.22
-sentence-transformers>=2.3.0
-# Cognee>=0.1.0
+fastembed>=0.2.0
 
-# Agent framework
-crewai>=0.80.0
+# Agent framework — pinned to avoid pip backtracking
+crewai>=1.9.3,<2.0
+openai>=1.83.0,<1.84
+instructor>=1.7.0,<1.8.0
+jiter>=0.8.0,<0.9
+
+# LLM providers
 google-genai
-google-generativeai
-# langchain dependencies are managed by crewai, but if needed explicitly:
-langchain>=0.3.0
-langchain-community>=0.3.0
-
-# Background tasks
-celery>=5.3.0
-redis>=5.0.0
 
 # Auth
 firebase-admin>=6.4.0
 
 # Rate limiting
 slowapi>=0.1.9
+# redis is optional — rate_limit.py falls back to in-memory when unavailable
+redis>=5.0.0
+
+# Observability — OPTIONAL: install manually with `pip install opik`
+# Pulls in litellm (~large). All imports are wrapped in try/except.
+# opik>=1.0.0,<2.0
 
 # Utils
-opik
-pydantic>=2.5.0
+pydantic[email]>=2.5.0
 pydantic-settings>=2.1.0
 httpx>=0.26.0
 
-pytest-asyncio>=0.21.0
+# Dev/Test — not included in Docker prod image
+# pytest-asyncio>=0.21.0

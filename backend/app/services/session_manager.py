@@ -18,7 +18,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from app.core.config import tracked
+
 from app.services.conversation_state import ConversationState, FieldConfidence
 from app.services.input_collector import InputCollector
 
@@ -140,7 +140,7 @@ class SessionManager:
         self._welcome_shown = True
         return welcome
     
-    @tracked(name="process_message", tags=["session"])
+
     def process_message(self, message: str) -> SessionResult:
         """
         Process a user message and return appropriate response.
@@ -411,14 +411,20 @@ Once you've received medical care, we can continue with your health plan."""
         self.crew_result = crew_result
         self.state.complete_session()
         
-        # Build final response
+        # Build final response using ResponseFormatter
         response_parts = []
-        
-        # Add crew result
-        if hasattr(crew_result, 'raw'):
-            response_parts.append(str(crew_result.raw))
-        else:
-            response_parts.append(str(crew_result))
+
+        # Use ResponseFormatter for structured output
+        try:
+            from app.services.response_formatter import ResponseFormatter
+            formatted = ResponseFormatter.format_crew_output(crew_result)
+            response_parts.append(formatted)
+        except Exception as fmt_err:
+            logger.warning("ResponseFormatter failed, falling back to raw: %s", fmt_err)
+            if hasattr(crew_result, 'raw'):
+                response_parts.append(str(crew_result.raw))
+            else:
+                response_parts.append(str(crew_result))
         
         # Add interventions for follow-up sessions
         if self.session_type == "follow_up" and self.interventions_generated:
@@ -482,7 +488,7 @@ Once you've received medical care, we can continue with your health plan."""
             )
             
         except Exception as e:
-            print(f"Warning: Failed to save to memory: {e}")
+            logger.warning("Failed to save to memory: %s", e)
     
     def get_combined_input(self) -> str:
         """Get combined user input for crew."""
