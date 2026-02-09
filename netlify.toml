@@ -9,14 +9,14 @@
 # Proxy /api/* requests to the Render backend (avoids CORS issues)
 [[redirects]]
   from = "/api/*"
-  to = "https://health-bridge-x2.onrender.com/api/:splat"
+  to = "https://health-bridge-x2ev.onrender.com/api/:splat"
   status = 200
   force = true
 
 # Health check proxy
 [[redirects]]
   from = "/health"
-  to = "https://health-bridge-x2.onrender.com/health"
+  to = "https://health-bridge-x2ev.onrender.com/health"
   status = 200
   force = true
 
