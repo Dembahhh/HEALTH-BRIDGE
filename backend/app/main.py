@@ -38,11 +38,25 @@ async def lifespan(app: FastAPI):
 
     # Initialize Firebase
     try:
+        import json as _json
+        import os as _os
         import firebase_admin
         from firebase_admin import credentials
 
         if not firebase_admin._apps:
-            cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
+            cred_path = settings.FIREBASE_CREDENTIALS_PATH
+            cred_json = _os.environ.get("FIREBASE_CREDENTIALS_JSON", "")
+
+            if _os.path.isfile(cred_path):
+                cred = credentials.Certificate(cred_path)
+            elif cred_json:
+                cred = credentials.Certificate(_json.loads(cred_json))
+            else:
+                raise FileNotFoundError(
+                    f"No Firebase credentials: file '{cred_path}' not found "
+                    "and FIREBASE_CREDENTIALS_JSON env var is not set"
+                )
+
             firebase_admin.initialize_app(cred)
             logger.info("Firebase Admin initialized")
     except Exception as e:
