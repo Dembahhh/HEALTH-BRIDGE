@@ -482,7 +482,9 @@ class ChatOrchestrator:
         if provider == "groq":
             api_key = os.getenv("GROQ_API_KEY")
             base_url = "https://api.groq.com/openai/v1"
-            model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+            # Groq doesn't have OpenAI models — force a compatible model
+            if model.startswith("openai/") or model.startswith("gpt"):
+                model = "llama-3.3-70b-versatile"
         elif provider == "github":
             api_key = os.getenv("GITHUB_TOKEN")
             base_url = os.getenv("GITHUB_BASE_URL", "https://models.github.ai/inference")
