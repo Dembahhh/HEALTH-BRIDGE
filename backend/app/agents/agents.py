@@ -20,7 +20,12 @@ class HealthBridgeAgents:
         api_key = None
         base_url = None
 
-        if provider == "gemini":
+        if provider == "groq":
+            api_key = settings.GROQ_API_KEY
+            base_url = "https://api.groq.com/openai/v1"
+            if model == "openai/gpt-4o-mini":
+                model = "llama-3.3-70b-versatile"
+        elif provider == "gemini":
             api_key = settings.GEMINI_API_KEY or settings.GOOGLE_API_KEY
         elif provider == "github":
             api_key = settings.GITHUB_TOKEN
@@ -33,6 +38,7 @@ class HealthBridgeAgents:
         # Validate API key is present
         if not api_key:
             env_var_map = {
+                "groq": "GROQ_API_KEY",
                 "gemini": "GEMINI_API_KEY",
                 "github": "GITHUB_TOKEN",
                 "azure": "AZURE_OPENAI_API_KEY",
