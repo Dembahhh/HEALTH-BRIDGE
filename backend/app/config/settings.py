@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GITHUB_TOKEN: str = ""
     GITHUB_BASE_URL: str = "https://models.github.ai/inference"
+    GROQ_API_KEY: str = ""
     AZURE_OPENAI_API_KEY: str = ""
 
     # Firebase

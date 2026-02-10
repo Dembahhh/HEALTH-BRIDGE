@@ -479,7 +479,11 @@ class ChatOrchestrator:
 
         model = os.getenv("LLM_MODEL", "openai/gpt-4o-mini")
 
-        if provider == "github":
+        if provider == "groq":
+            api_key = os.getenv("GROQ_API_KEY")
+            base_url = "https://api.groq.com/openai/v1"
+            model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
+        elif provider == "github":
             api_key = os.getenv("GITHUB_TOKEN")
             base_url = os.getenv("GITHUB_BASE_URL", "https://models.github.ai/inference")
         elif provider == "openai":
