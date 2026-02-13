@@ -4,10 +4,13 @@ Chat API Routes
 Endpoints for chat sessions and messaging.
 """
 
+import asyncio
+import json
 import logging
-from typing import Optional, List
+from typing import Optional, List, AsyncGenerator
 from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 
@@ -242,6 +245,134 @@ async def send_message(
             content=fallback,
             agent_name="system",
         )
+
+
+# ---------------------------------------------------------------------------
+# Streaming Endpoint (SSE)
+# ---------------------------------------------------------------------------
+
+@router.post("/stream")
+@limiter.limit("10/minute")
+async def send_streaming_message(
+    request_body: SendMessageRequest,
+    request: Request,
+    current_user: CurrentUser,
+) -> StreamingResponse:
+    """Stream chat responses with progressive updates via Server-Sent Events.
+
+    Auto-routes between quick (single LLM) and full crew pipelines based
+    on question complexity.  Each SSE event is a JSON object with keys:
+    ``type`` ('start' | 'progress' | 'complete' | 'error'),
+    ``content``, ``agent_name``, ``elapsed_seconds``, ``timestamp``.
+
+    The stream terminates with a ``data: [DONE]`` sentinel.
+    """
+    from app.agents import get_orchestrator
+
+    uid = _uid(current_user)
+    orchestrator = get_orchestrator()
+    session_id = request_body.session_id
+    content = request_body.content
+
+    # Look up session type
+    session = await ChatSession.find_one(
+        ChatSession.session_id == session_id
+    )
+    session_type = session.session_type if session else "general"
+
+    # Decide routing: complex questions → full crew stream, simple → quick stream
+    question_type = orchestrator._classify_question(content)
+    use_full = question_type in ("risk_assessment", "personalized")
+
+    logger.info(
+        ">>> STREAM [%s] session=%s type=%s: %s",
+        "full" if use_full else "quick",
+        session_id,
+        question_type,
+        content[:120],
+    )
+
+    async def _event_generator() -> AsyncGenerator[str, None]:
+        """Yield SSE-formatted events from the orchestrator stream."""
+        final_content = ""
+        final_agent = "system"
+
+        try:
+            # Persist user message before streaming begins
+            await _persist_message(session_id, "user", content)
+
+            # Pick the appropriate streaming generator
+            if use_full:
+                stream = orchestrator.process_message_stream(
+                    user_id=uid,
+                    session_id=session_id,
+                    message=content,
+                    session_type=session_type,
+                )
+            else:
+                stream = orchestrator.quick_message_stream(
+                    user_id=uid,
+                    session_id=session_id,
+                    message=content,
+                )
+
+            async for chunk in stream:
+                yield f"data: {json.dumps(chunk)}\n\n"
+
+                # Capture final response for DB persistence
+                if chunk.get("type") in ("complete", "error"):
+                    final_content = chunk.get("content", "")
+                    final_agent = chunk.get("agent_name", "system")
+
+                # Yield control so FastAPI can flush to client
+                await asyncio.sleep(0)
+
+        except Exception as exc:
+            logger.error("SSE generator error: %s", exc, exc_info=True)
+            error_event = {
+                "type": "error",
+                "content": "An error occurred. Please try again.",
+                "agent_name": "system",
+                "elapsed_seconds": 0,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+            final_content = error_event["content"]
+            final_agent = "system"
+            yield f"data: {json.dumps(error_event)}\n\n"
+
+        finally:
+            # Persist the assistant's final response
+            if final_content:
+                try:
+                    saved = await _persist_message(
+                        session_id, "assistant", final_content, final_agent
+                    )
+
+                    # Auto-save HabitPlan if crew returned habits
+                    # (only relevant for full pipeline)
+                    if use_full and isinstance(saved, ChatMessage):
+                        # Touch session timestamp
+                        if session:
+                            session.update_timestamp()
+                            await session.save()
+
+                except Exception as persist_err:
+                    logger.warning(
+                        "Failed to persist streamed response: %s", persist_err
+                    )
+
+            # Sentinel: stream finished
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        _event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx/proxy buffering
+        },
+    )
 
 
 @router.post("/quick", response_model=SendMessageResponse)

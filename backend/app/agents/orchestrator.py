@@ -8,8 +8,10 @@ Fetches user HealthProfile for personalized responses and classifies question ty
 
 import asyncio
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, Optional
+from datetime import datetime, timezone
+from typing import Any, AsyncGenerator, Dict, Optional
 from uuid import uuid4
 
 from app.models.profile import HealthProfile
@@ -344,6 +346,252 @@ class ChatOrchestrator:
         self._sessions.pop(session_id, None)
 
         return {"content": final_response, "agent_name": "crew"}
+
+    # ------------------------------------------------------------------
+    # Streaming Message Processing (SSE)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _sse_event(
+        event_type: str,
+        content: str,
+        agent_name: str = "",
+        elapsed: float = 0.0,
+    ) -> Dict[str, Any]:
+        """Build a standardized SSE progress event dict.
+
+        Args:
+            event_type: One of 'start', 'progress', 'complete', 'error'.
+            content: Human-readable status or final response text.
+            agent_name: Which agent produced this event (empty for system).
+            elapsed: Seconds elapsed since stream started.
+
+        Returns:
+            Dict ready for JSON serialisation and SSE transport.
+        """
+        return {
+            "type": event_type,
+            "content": content,
+            "agent_name": agent_name,
+            "elapsed_seconds": round(elapsed, 2),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    async def process_message_stream(
+        self,
+        user_id: str,
+        session_id: str,
+        message: str,
+        session_type: str = "general",
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Stream progress updates during full crew message processing.
+
+        Yields SSE-compatible dicts at five checkpoints:
+        1. Acknowledgment (immediate)
+        2. Profile loaded
+        3. SessionManager extraction complete
+        4. Crew execution started
+        5. Final response
+
+        Args:
+            user_id: Firebase UID of the requesting user.
+            session_id: Active chat session identifier.
+            message: Raw user message text.
+            session_type: One of 'intake', 'follow_up', 'general'.
+
+        Yields:
+            Dict with keys: type, content, agent_name, elapsed_seconds, timestamp.
+
+        Example:
+            >>> async for chunk in orchestrator.process_message_stream(...):
+            ...     send_sse(chunk)
+        """
+        t0 = time.monotonic()
+
+        try:
+            # --- Checkpoint 1: Instant acknowledgment ---
+            yield self._sse_event(
+                "start",
+                "Analyzing your message...",
+                elapsed=time.monotonic() - t0,
+            )
+
+            manager = self._get_or_create_session(user_id, session_id, session_type)
+
+            # --- Checkpoint 2: Profile loaded ---
+            yield self._sse_event(
+                "progress",
+                "Loading your health profile...",
+                elapsed=time.monotonic() - t0,
+            )
+
+            # Run SessionManager extraction (blocking)
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                _executor, manager.process_message, message
+            )
+
+            # Handle urgent symptoms — short-circuit
+            if result.has_urgent_symptoms:
+                yield self._sse_event(
+                    "complete",
+                    result.response,
+                    agent_name="safety",
+                    elapsed=time.monotonic() - t0,
+                )
+                return
+
+            # Still collecting info — return follow-up question
+            if not result.ready_for_crew:
+                yield self._sse_event(
+                    "complete",
+                    result.response,
+                    agent_name="collector",
+                    elapsed=time.monotonic() - t0,
+                )
+                return
+
+            # --- Checkpoint 3: Extraction complete, starting crew ---
+            yield self._sse_event(
+                "progress",
+                "Health data extracted. Consulting our AI health team...",
+                elapsed=time.monotonic() - t0,
+            )
+
+            context = manager.get_session_context()
+            combined_input = context["combined_input"]
+            detected_fields = context["collected_fields"]
+            crew_session_type = context["session_type"]
+
+            profile_summary, _conv_history, profile = (
+                await self._fetch_profile_and_history(user_id)
+            )
+
+            # --- Checkpoint 4: Crew running ---
+            yield self._sse_event(
+                "progress",
+                "Our specialists are reviewing your case (this may take 20-30s)...",
+                elapsed=time.monotonic() - t0,
+            )
+
+            crew_result = await loop.run_in_executor(
+                _executor,
+                self._chat_service.run_session,
+                combined_input,
+                user_id,
+                crew_session_type,
+                detected_fields,
+                [message],
+                profile_summary,
+            )
+
+            final_response = manager.complete_session(crew_result)
+
+            # Persist to profile
+            try:
+                if profile is None:
+                    profile = HealthProfile(user_id=user_id)
+                profile.append_conversation(message, final_response, "crew")
+                await profile.save()
+            except Exception as save_err:
+                logger.warning("Failed to save conversation history (stream): %s", save_err)
+
+            self._sessions.pop(session_id, None)
+
+            # --- Checkpoint 5: Final response ---
+            yield self._sse_event(
+                "complete",
+                final_response,
+                agent_name="crew",
+                elapsed=time.monotonic() - t0,
+            )
+
+        except Exception as exc:
+            logger.error("Stream processing error: %s", exc, exc_info=True)
+            yield self._sse_event(
+                "error",
+                "I encountered an error processing your message. Please try again.",
+                elapsed=time.monotonic() - t0,
+            )
+
+    async def quick_message_stream(
+        self,
+        user_id: str,
+        session_id: str,
+        message: str,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Stream progress updates during a quick (single-LLM) response.
+
+        Yields SSE-compatible dicts at three checkpoints:
+        1. Acknowledgment (immediate)
+        2. Profile + question classified
+        3. Final response
+
+        Args:
+            user_id: Firebase UID of the requesting user.
+            session_id: Active chat session identifier.
+            message: Raw user message text.
+
+        Yields:
+            Dict with keys: type, content, agent_name, elapsed_seconds, timestamp.
+        """
+        t0 = time.monotonic()
+
+        try:
+            # --- Checkpoint 1: Instant acknowledgment ---
+            yield self._sse_event(
+                "start",
+                "Processing your question...",
+                elapsed=time.monotonic() - t0,
+            )
+
+            profile_summary, conv_history, profile = (
+                await self._fetch_profile_and_history(user_id)
+            )
+            question_type = self._classify_question(message)
+
+            # --- Checkpoint 2: Profile loaded ---
+            yield self._sse_event(
+                "progress",
+                "Preparing your personalized response...",
+                elapsed=time.monotonic() - t0,
+            )
+
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                _executor,
+                self._direct_llm_call,
+                message,
+                user_id,
+                profile_summary,
+                question_type,
+                conv_history,
+            )
+
+            # Persist to profile
+            try:
+                if profile is None:
+                    profile = HealthProfile(user_id=user_id)
+                profile.append_conversation(message, response, question_type)
+                await profile.save()
+            except Exception as save_err:
+                logger.warning("Failed to save conversation history (quick stream): %s", save_err)
+
+            # --- Checkpoint 3: Final response ---
+            yield self._sse_event(
+                "complete",
+                response,
+                agent_name=f"quick:{question_type}",
+                elapsed=time.monotonic() - t0,
+            )
+
+        except Exception as exc:
+            logger.error("Quick stream error: %s", exc, exc_info=True)
+            yield self._sse_event(
+                "error",
+                "I had trouble processing that. Could you try rephrasing?",
+                elapsed=time.monotonic() - t0,
+            )
 
     async def quick_message(
         self,

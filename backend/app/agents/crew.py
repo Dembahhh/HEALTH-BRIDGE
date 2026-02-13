@@ -10,6 +10,7 @@ from crewai import Crew, Process, Task
 from .agents import HealthBridgeAgents
 from . import tasks
 from .models import RiskAssessment, Constraints, HabitPlan, SafetyReview
+from app.config.settings import settings
 
 _verbose = os.getenv("AGENT_VERBOSE", "false").lower() == "true"
 
@@ -17,6 +18,19 @@ _verbose = os.getenv("AGENT_VERBOSE", "false").lower() == "true"
 class HealthBridgeCrew:
     def __init__(self):
         self._agents = HealthBridgeAgents()
+
+    # Monkey-patch to disable CrewAI's local SQLite storage (fixes disk full error)
+    def _disable_crew_storage(self, crew_instance: Crew):
+        if hasattr(crew_instance, '_task_output_handler'):
+            class DummyStorage:
+                def add(self, *args, **kwargs): pass
+                def reset(self): pass
+                def delete_all(self): pass
+            
+            # Replace the handler's storage with a dummy that does nothing
+            if hasattr(crew_instance._task_output_handler, 'storage'):
+                crew_instance._task_output_handler.storage = DummyStorage()
+        return crew_instance
 
     def intake_crew(self, user_input: str, user_id: str, memory_context: str = "") -> Crew:
         """Full intake session: profile -> risk -> constraints -> plan -> safety."""
@@ -40,7 +54,7 @@ class HealthBridgeCrew:
             tasks=[t_intake, t_risk, t_context, t_plan, t_safety],
             process=Process.sequential,
             verbose=_verbose,
-            tracing=True,
+            tracing=settings.TRACING_ENABLED,
         )
 
     def follow_up_crew(self, user_input: str, user_id: str, memory_context: str = "") -> Crew:
@@ -59,7 +73,7 @@ class HealthBridgeCrew:
             tasks=[t_context, t_plan, t_safety],
             process=Process.sequential,
             verbose=_verbose,
-            tracing=True,
+            tracing=settings.TRACING_ENABLED,
         )
 
     def general_crew(self, user_input: str, user_id: str, memory_context: str = "") -> Crew:
@@ -103,7 +117,7 @@ class HealthBridgeCrew:
             tasks=[t_risk, t_safety],
             process=Process.sequential,
             verbose=_verbose,
-            tracing=True
+            tracing=settings.TRACING_ENABLED
         )
 
 
