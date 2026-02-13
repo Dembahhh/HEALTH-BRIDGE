@@ -189,6 +189,43 @@ class ChatService:
             return "follow_up"
         if any(s in text for s in intake_signals) and not has_profile_memory:
             return "intake"
+        
+        # SAFETY GUARD: If user mentions symptoms, ALWAYS use General Crew (Risk Agent)
+        risk_signals = [
+            "pain", "hurt", "ache", "blood", "swollen", "dizzy", "faint", 
+            "vomit", "emergency", "help", "sick", "ill", "temperature",
+            "fever", "cough", "breath", "vision", "blur", "headache", "chest"
+        ]
+        if any(s in text for s in risk_signals):
+            return "general"
+
+        # New: Chitchat and Resource detection (Phase 5 optimization)
+        chitchat_signals = [
+            "hi", "hello", "hey", "greetings", "good morning", "good afternoon",
+            "good evening", "thanks", "thank you", "bye", "goodbye"
+        ]
+        # Only match chitchat if the message is short (< 10 words)
+        if len(text.split()) < 10 and any(s == text.strip().strip("!.?") for s in chitchat_signals):
+             return "chitchat"
+
+        resource_signals = [
+            "hospital", "clinic", "pharmacy", "chemist", "dispensary",
+            "doctor", "gym", "market", "where can i find", "nearest",
+            "location", "map", "directions to"
+        ]
+        if any(s in text for s in resource_signals):
+            return "resource"
+
+        # Lifestyle/Advice signals (Phase 5b optimization)
+        lifestyle_signals = [
+            "diet", "food", "eat", "meal", "cook", "recipe", "nutrition",
+            "exercise", "workout", "gym", "fitness", "walking", "running",
+            "stress", "sleep", "habit", "routine",
+            "breakfast", "lunch", "dinner", "supper", "snack", "drink"
+        ]
+        if any(s in text for s in lifestyle_signals):
+            return "lifestyle"
+
         return "general"
 
     def _extract_entities_from_input(self, user_input: str, detected_fields: Dict) -> Dict:
@@ -278,6 +315,10 @@ class ChatService:
             has_profile = "[profile]" in memory_context or "## Your Health Profile" in memory_context or "## User Profile" in memory_context
             session_type = self._detect_session_type(user_input, has_profile)
 
+        # Optimization: Handle simple intents directly (skip Crew overhead)
+        if session_type in ["chitchat", "resource", "lifestyle"]:
+            return self._handle_direct_response(user_input, user_id, session_type)
+
         # Parallel execution for intake when enabled
         use_parallel = os.getenv("PARALLEL_CREW", "false").lower() == "true"
 
@@ -315,6 +356,57 @@ class ChatService:
         )
 
         return ChatServiceResult(raw_result=result, user_id=user_id)
+
+    def _handle_direct_response(self, user_input: str, user_id: str, session_type: str) -> ChatServiceResult:
+        """Handle simple queries directly with LLM to save cost/latency."""
+        try:
+            system_prompt = (
+                "You are HealthBridge, an empathetic AI health coach for Kenya. "
+                "Keep your response concise, helpful, and culturally appropriate."
+            )
+            
+            if session_type == "chitchat":
+                system_prompt += " Reply warmly to this greeting. Keep it under 2 sentences."
+            elif session_type == "resource":
+                system_prompt += (
+                    " The user is asking for a resource or location. "
+                    "Since you do not have real-time location access, provide general guidance "
+                    "on how to find these services in Kenya (e.g. 'You can check local directories or Google Maps for...'). "
+                    "Mention specific major facilities (like Kenyatta National Hospital) only if relevant."
+                )
+            elif session_type == "lifestyle":
+                system_prompt += (
+                    " The user is asking for lifestyle, diet, or exercise advice. "
+                    "Provide specific, concrete examples (e.g. exact meal ideas). "
+                    "Do NOT give generic 'eat healthy' advice. Give distinct options. "
+                    "Keep it encouraging and actionable."
+                )
+
+            # Dynamic Formatting Instructions (Phase 6)
+            input_lower = user_input.lower()
+            if any(w in input_lower for w in ["plan", "schedule", "week", "calendar", "menu"]):
+                system_prompt += "\nFORMAT: Create a Markdown Table with columns (Day/Time | Activity/Meal | Notes). Cover at least 3 days."
+            elif any(w in input_lower for w in ["list", "ideas", "examples", "options", "tips"]):
+                system_prompt += "\nFORMAT: Use a bulleted list for readability."
+            elif any(w in input_lower for w in ["shop", "buy", "grocery", "store"]):
+                system_prompt += "\nFORMAT: Use a checklist format [ ] for items."
+            else:
+                system_prompt += "\nFORMAT: Use short paragraphs and bullet points where helpful."
+            
+            # Direct LLM call (using the configured provider from agents)
+            # Assuming self.crew._agents.llm exposes a valid call method for the string
+            response = self.crew._agents.llm.call(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_input}
+                ]
+            )
+            return ChatServiceResult(raw_result=response, user_id=user_id)
+            
+        except Exception as e:
+            logger.error(f"Direct LLM handler failed: {e}")
+            # Fallback to general crew
+            return self.run_session(user_input, user_id, session_type="general")
 
 
     def _run_parallel_intake(self, user_input: str, user_id: str, memory_context: str):

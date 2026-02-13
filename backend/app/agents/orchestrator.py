@@ -485,7 +485,21 @@ class ChatOrchestrator:
                 profile_summary,
             )
 
-            final_response = manager.complete_session(crew_result)
+            # Extract the actual text from ChatServiceResult
+            final_response = str(crew_result.raw_result)
+            
+            # If the result is a CrewOutput with structured Pydantic data, extract the clean text
+            if hasattr(crew_result, "raw_result") and hasattr(crew_result.raw_result, "pydantic"):
+                pydantic_obj = crew_result.raw_result.pydantic
+                if pydantic_obj and hasattr(pydantic_obj, "revised_response"):
+                    final_response = pydantic_obj.revised_response
+            
+            # Fallback: check if the string looks like a SafetyReview dump
+            if "revised_response=" in final_response:
+                import re
+                match = re.search(r'revised_response=[\'"](.*?)[\'"](?:,|$)', final_response, re.DOTALL)
+                if match:
+                    final_response = match.group(1).replace(r'\n', '\n')
 
             # Persist to profile
             try:
