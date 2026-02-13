@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import ReactMarkdown from 'react-markdown';
 import ThemeToggle from '../components/ThemeToggle';
-import { ArrowLeft, Send, Sparkles, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Send, Sparkles, RotateCcw, Loader2 } from 'lucide-react';
 import { chatApi } from '../services/api';
 
 const INITIAL_MESSAGE = {
@@ -21,6 +21,12 @@ export default function ChatPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [sessionId, setSessionId] = useState(() => storageKey ? localStorage.getItem(storageKey) : null);
     const [error, setError] = useState(null);
+
+    // Streaming state
+    const [streamStatus, setStreamStatus] = useState('');      // Progress text shown to user
+    const [isStreaming, setIsStreaming] = useState(false);      // True while SSE stream is active
+    const abortStreamRef = useRef(null);                       // Abort function for active stream
+
     const messagesEndRef = useRef(null);
     const sessionInitialized = useRef(false);
     const lastUidRef = useRef(uid);
@@ -34,6 +40,8 @@ export default function ChatPage() {
             setSessionId(savedSession);
             setMessages([INITIAL_MESSAGE]);
             setError(null);
+            setStreamStatus('');
+            setIsStreaming(false);
             sessionInitialized.current = false;
         }
     }, [uid]);
@@ -44,7 +52,7 @@ export default function ChatPage() {
 
     useEffect(() => {
         scrollToBottom();
-    }, [messages]);
+    }, [messages, streamStatus]);
 
     // Initialize or restore chat session
     const initializeSession = useCallback(async () => {
@@ -114,15 +122,20 @@ export default function ChatPage() {
         initializeSession();
     }, [initializeSession]);
 
+    // -------------------------------------------------------------------
+    // Streaming send handler
+    // -------------------------------------------------------------------
     const handleSend = async () => {
         console.log('[ChatPage] handleSend called, input:', input, 'isLoading:', isLoading);
-        if (!input.trim() || isLoading) return;
+        if (!input.trim() || isLoading || isStreaming) return;
 
         const userMessage = { role: 'user', content: input };
         setMessages(prev => [...prev, userMessage]);
         const currentInput = input;
         setInput('');
         setIsLoading(true);
+        setIsStreaming(true);
+        setStreamStatus('');
         setError(null);
 
         try {
@@ -139,20 +152,68 @@ export default function ChatPage() {
                 if (storageKey) localStorage.setItem(storageKey, currentSessionId);
             }
 
-            // Send message to backend (using quick mode for fast responses)
-            console.log('[ChatPage] Sending message to session:', currentSessionId);
-            const response = await chatApi.sendQuickMessage(currentSessionId, currentInput);
-            console.log('[ChatPage] Got response:', response.data);
+            // Send via SSE streaming
+            console.log('[ChatPage] Starting SSE stream for session:', currentSessionId);
 
-            const aiResponse = {
-                role: 'assistant',
-                content: response.data.content
-            };
-            setMessages(prev => [...prev, aiResponse]);
+            const abort = chatApi.sendStreamingMessage(
+                currentSessionId,
+                currentInput,
+                // onChunk — handle each SSE event
+                (chunk) => {
+                    console.log('[ChatPage] SSE chunk:', chunk.type, chunk.content?.slice(0, 80));
+
+                    if (chunk.type === 'start' || chunk.type === 'progress') {
+                        setStreamStatus(chunk.content);
+                    } else if (chunk.type === 'complete') {
+                        // Add final AI response
+                        const aiResponse = { role: 'assistant', content: chunk.content };
+                        setMessages(prev => [...prev, aiResponse]);
+                        setStreamStatus('');
+                        setIsStreaming(false);
+                        setIsLoading(false);
+                    } else if (chunk.type === 'error') {
+                        setError(chunk.content);
+                        setStreamStatus('');
+                        setIsStreaming(false);
+                        setIsLoading(false);
+                    }
+                },
+                // onComplete — stream finished
+                () => {
+                    console.log('[ChatPage] SSE stream complete');
+                    setStreamStatus('');
+                    setIsStreaming(false);
+                    setIsLoading(false);
+                },
+                // onError — stream failed, fall back to non-streaming
+                async (err) => {
+                    console.error('[ChatPage] SSE stream error, falling back:', err);
+                    setStreamStatus('');
+
+                    try {
+                        // Fallback: use non-streaming auto endpoint
+                        const response = await chatApi.sendAutoMessage(currentSessionId, currentInput);
+                        const aiResponse = { role: 'assistant', content: response.data.content };
+                        setMessages(prev => [...prev, aiResponse]);
+                    } catch (fallbackErr) {
+                        console.error('[ChatPage] Fallback also failed:', fallbackErr);
+                        const errorMessage = fallbackErr.response?.data?.detail || 'Failed to get response. Please try again.';
+                        setError(errorMessage);
+                    } finally {
+                        setIsStreaming(false);
+                        setIsLoading(false);
+                    }
+                }
+            );
+
+            abortStreamRef.current = abort;
+
         } catch (err) {
             console.error('[ChatPage] Failed to send message:', err);
             const errorMessage = err.response?.data?.detail || 'Failed to get response. Please try again.';
             setError(errorMessage);
+            setStreamStatus('');
+            setIsStreaming(false);
 
             // If session is invalid, clear it and retry
             if (err.response?.status === 404 || err.response?.status === 403) {
@@ -161,7 +222,10 @@ export default function ChatPage() {
                 sessionInitialized.current = false;
             }
         } finally {
-            setIsLoading(false);
+            // Only set loading false if not streaming (streaming handlers manage their own state)
+            if (!isStreaming) {
+                setIsLoading(false);
+            }
         }
     };
 
@@ -173,11 +237,20 @@ export default function ChatPage() {
     };
 
     const handleNewChat = async () => {
+        // Abort any active stream
+        if (abortStreamRef.current) {
+            abortStreamRef.current();
+            abortStreamRef.current = null;
+        }
+
         try {
             if (storageKey) localStorage.removeItem(storageKey);
             setSessionId(null);
             setMessages([INITIAL_MESSAGE]);
             setError(null);
+            setStreamStatus('');
+            setIsStreaming(false);
+            setIsLoading(false);
             sessionInitialized.current = false;
 
             const response = await chatApi.createSession('general');
@@ -270,8 +343,36 @@ export default function ChatPage() {
                     </div>
                 ))}
 
-                {/* Loading indicator */}
-                {isLoading && (
+                {/* Streaming progress indicator */}
+                {isStreaming && streamStatus && (
+                    <div className="flex justify-start animate-fadeIn">
+                        <div className="flex items-start gap-3">
+                            <div className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                style={{ background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%)' }}>
+                                <Sparkles className="w-4 h-4 text-white" />
+                            </div>
+                            <div className="px-4 py-3 rounded-2xl"
+                                style={{
+                                    background: 'var(--bg-surface)',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: '1.25rem 1.25rem 1.25rem 0.25rem'
+                                }}>
+                                <div className="flex items-center gap-2">
+                                    <Loader2
+                                        className="w-4 h-4 animate-spin"
+                                        style={{ color: 'var(--color-primary)' }}
+                                    />
+                                    <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                                        {streamStatus}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Loading indicator (fallback — only shows if streaming status is empty) */}
+                {isLoading && !streamStatus && (
                     <div className="flex justify-start animate-fadeIn">
                         <div className="flex items-start gap-3">
                             <div className="w-8 h-8 rounded-lg flex items-center justify-center"
@@ -331,7 +432,7 @@ export default function ChatPage() {
                     </div>
                     <button
                         onClick={handleSend}
-                        disabled={!input.trim() || isLoading}
+                        disabled={!input.trim() || isLoading || isStreaming}
                         className="p-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105"
                         style={{
                             background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%)',
