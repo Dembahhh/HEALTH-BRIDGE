@@ -5,7 +5,7 @@ Endpoints for health profile management.
 """
 
 from typing import Optional, List
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.api.deps import CurrentUser
@@ -103,8 +103,18 @@ async def update_profile(
     uid = _uid(current_user)
     profile = await _get_or_create_profile(uid)
 
+    # Explicit whitelist — only these fields may be set via this endpoint
+    ALLOWED_FIELDS = {
+        "photo_url", "age_band", "sex",
+        "family_history_hypertension", "family_history_diabetes",
+        "smoking_status", "alcohol_consumption", "bmi_category",
+        "activity_level", "diet_pattern", "constraints",
+    }
+
     update_data = request.model_dump(exclude_unset=True)
     for key, value in update_data.items():
+        if key not in ALLOWED_FIELDS:
+         raise HTTPException(status_code=400, detail=f"Field '{key}' is not updatable")
         setattr(profile, key, value)
 
     profile.update_timestamp()
