@@ -5,7 +5,17 @@ import ReactMarkdown from 'react-markdown';
 import ThemeToggle from '../components/ThemeToggle';
 import { ArrowLeft, Send, Sparkles, RotateCcw, Loader2 } from 'lucide-react';
 import { chatApi } from '../services/api';
+import rehypeSanitize, { defaultSchema} from 'rehype-sanitize';
 
+// Define allowed elements whitelist (safe formatting only, no raw HTML)
+const MARKDOWN_SANITIZE_SCHEMA = {
+    ...defaultSchema,
+    allowedElements: [
+        'p', 'br', 'strong', 'em', 'b', 'i', 'ul', 'ol', 'li',
+        'h1', 'h2', 'h3', 'h4', 'blockquote', 'code', 'pre', 'hr'
+        // Notably absent: 'a' (links), 'img', 'script', 'iframe'
+    ],
+};
 const INITIAL_MESSAGE = {
     role: 'assistant',
     content: "Hello! I'm your AI health coach. I'm here to help you understand your health better and provide personalized recommendations. How can I assist you today?"
@@ -333,7 +343,11 @@ export default function ChatPage() {
                                 }}>
                                 {message.role === 'assistant' ? (
                                     <div className="text-sm leading-relaxed assistant-markdown">
-                                        <ReactMarkdown>{message.content}</ReactMarkdown>
+                                        <ReactMarkdown
+                                          rehypePlugins={[[rehypeSanitize, MARKDOWN_SANITIZE_SCHEMA]]}
+                                        >
+                                           {message.content}
+                                        </ReactMarkdown>
                                     </div>
                                 ) : (
                                     <p className="text-sm leading-relaxed">{message.content}</p>
