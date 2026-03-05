@@ -297,55 +297,6 @@ class LLMExtractor:
         except Exception as e:
             raise Exception(f"LLM parsing failed: {e}")
 
-Extract health information. Return JSON only:
-{{
-  "fields": {{
-    "field_name": {{"value": "...", "confidence": 0.9}}
-  }},
-  "implied": {{}}
-}}
-
-Fields: age (number), sex (male/female), conditions (list or "none"), family_history, smoking (yes/no/former), alcohol (no/occasionally/regularly), diet, activity, constraints"""
-
-        try:
-            if self.llm_type == "gemini":
-                response = self._genai_client.models.generate_content(
-                    model=self._gemini_model, contents=prompt
-                )
-                result_text = response.text
-            else:
-                response = self.llm_client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=300,
-                    temperature=0
-                )
-                result_text = response.choices[0].message.content
-            
-            result_text = self._clean_json(result_text)
-            parsed = json.loads(result_text)
-            
-            fields = {}
-            for name, data in parsed.get("fields", {}).items():
-                if data.get("value") is not None:
-                    fields[name] = ExtractionResult(
-                        field_name=name,
-                        value=data["value"],
-                        confidence=float(data.get("confidence", 0.8)),
-                        needs_clarification=False,
-                        clarifying_question=None,
-                        source="llm"
-                    )
-            
-            return FullExtractionResult(
-                fields=fields,
-                implied=parsed.get("implied", {}),
-                urgent_symptoms=urgent_symptoms,
-                raw_text=result_text
-            )
-            
-        except Exception as e:
-            raise Exception(f"LLM parsing failed: {e}")
     
     def _extract_with_semantic(
         self,
