@@ -1,7 +1,7 @@
-@import "tailwindcss";
-
 /* SF Pro Display - Using Inter as web-safe alternative with similar characteristics */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@import "tailwindcss";
 
 /* ========================================
    HEALTHBRIDGE DESIGN SYSTEM
