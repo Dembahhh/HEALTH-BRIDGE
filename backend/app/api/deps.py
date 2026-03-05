@@ -5,6 +5,7 @@ Common dependencies for API routes (auth, database, etc.).
 """
 
 import logging
+import secrets
 from typing import Annotated
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -51,7 +52,7 @@ async def get_current_user(
 
         # Dev token fallback (also guarded by Settings validator)
         if settings.ALLOW_DEV_TOKEN and settings.DEV_TOKEN:
-            if token == settings.DEV_TOKEN:
+              if secrets.compare_digest(token, settings.DEV_TOKEN):
                 logger.info("Dev token accepted for development")
                 return {"uid": "dev-user", "email": "dev@example.com"}
 
