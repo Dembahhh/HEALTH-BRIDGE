@@ -153,6 +153,9 @@ export const { setUser, setLoading } = authSlice.actions;
 
 // Persistence Listener
 export const initAuthListener = (dispatch) => {
+    // Track the current interceptor ID so we can eject it before adding a new one
+    let currentInterceptorId = null;
+
     onAuthStateChanged(auth, async (user) => {
         if (user) {
             const token = await user.getIdToken();
@@ -166,13 +169,23 @@ export const initAuthListener = (dispatch) => {
                 token
             }));
 
-            // Set token for axios API calls
-            api.interceptors.request.use((config) => {
+            // ✅ Eject the previous interceptor before adding a new one
+            if (currentInterceptorId !== null) {
+                api.interceptors.request.eject(currentInterceptorId);
+            }
+
+            // ✅ Store the new interceptor ID in the closure
+            currentInterceptorId = api.interceptors.request.use((config) => {
                 config.headers.Authorization = `Bearer ${token}`;
                 return config;
             });
 
         } else {
+            // ✅ On logout, eject the interceptor so no token is sent
+            if (currentInterceptorId !== null) {
+                api.interceptors.request.eject(currentInterceptorId);
+                currentInterceptorId = null;
+            }
             dispatch(setUser({ user: null, token: null }));
         }
     });
