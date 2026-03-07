@@ -2,6 +2,8 @@
 
 A preventive health coaching system for hypertension and type 2 diabetes risk assessment, designed for low-resource African settings.
 
+**Live Demo:** [https://healthbridge-ai.netlify.app](https://healthbridge-ai.netlify.app) | [Firebase Hosting](https://healthbridge-ai-e96f5.firebaseapp.com)
+
 ## Overview
 
 Health-Bridge AI combines a FastAPI backend with a React frontend, featuring a multi-agent architecture powered by CrewAI and RAG (Retrieval-Augmented Generation) using ChromaDB. The system provides personalized health guidance while considering social determinants of health (SDOH) constraints.
@@ -88,11 +90,19 @@ Key capabilities:
 
 ```
 HEALTH-BRIDGE/
+├── .agent/                        # Agent configuration
+├── .pre-commit-config.yaml        # Pre-commit hooks config
+├── .secrets.baseline              # detect-secrets baseline
+├── data/                          # Shared data directory
+├── docker-compose.yml             # 3-service Docker Compose (MongoDB + Backend + Nginx)
+├── netlify.toml                   # Netlify deployment config
+├── nginx/                         # Nginx Dockerfile + config
 ├── backend/
 │   ├── app/
 │   │   ├── agents/
 │   │   │   ├── agents.py          # 5 agent definitions
 │   │   │   ├── crew.py            # Crew assembly + ParallelIntakeOrchestrator
+│   │   │   ├── orchestrator.py    # Orchestration logic
 │   │   │   ├── tasks.py           # Task definitions with Pydantic output
 │   │   │   ├── models.py          # Profile, RiskAssessment, Constraints, HabitPlan, SafetyReview
 │   │   │   └── tools.py           # 7 CrewAI tools with timeout/retry
@@ -126,11 +136,12 @@ HEALTH-BRIDGE/
 ├── frontend/
 │   ├── src/
 │   │   ├── components/            # Reusable UI components
+│   │   ├── context/               # React context providers (ThemeContext)
 │   │   ├── pages/                 # Route pages
 │   │   ├── features/              # Redux slices
 │   │   └── services/              # API & Firebase clients
 │   └── package.json
-└── docs/
+└── package.json
 ```
 
 ## Installation
@@ -230,7 +241,8 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 Create `frontend/.env`:
 
 ```env
-VITE_API_URL=http://localhost:8000/api
+# Base URL of the backend — the frontend service layer appends /api/* paths
+VITE_API_URL=http://localhost:8000
 VITE_FIREBASE_API_KEY=your-firebase-api-key
 VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
 VITE_FIREBASE_PROJECT_ID=your-project-id
@@ -363,7 +375,12 @@ python -m tests.eval_runner --tier 3   # Safety boundary (needs RUN_E2E_EVAL=tru
 |--------|----------|-------------|
 | POST | `/api/chat/session` | Create new chat session |
 | POST | `/api/chat/message` | Send message & get AI response |
-| GET | `/api/chat/history/{session_id}` | Get conversation history |
+| POST | `/api/chat/stream` | SSE streaming response (auto-routes quick/full) |
+| POST | `/api/chat/quick` | Quick single-turn response (lighter pipeline) |
+| POST | `/api/chat/auto` | Auto-routed message (picks quick or full based on complexity) |
+| POST | `/api/chat/feedback` | Submit feedback on an assistant message |
+| GET | `/api/chat/session/{session_id}/messages` | Get conversation history for a session |
+| GET | `/api/chat/sessions` | List all chat sessions for current user |
 
 ### Profile
 | Method | Endpoint | Description |
@@ -376,7 +393,122 @@ python -m tests.eval_runner --tier 3   # Safety boundary (needs RUN_E2E_EVAL=tru
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/plans/current` | Get active habit plan |
+| GET | `/api/plans/history` | Get plan history |
 | POST | `/api/plans/feedback` | Submit adherence feedback |
+
+## SSE Streaming
+
+The `/api/chat/stream` endpoint uses **Server-Sent Events** for real-time responses. It auto-routes between two pipelines:
+
+| Pipeline | Trigger | Latency |
+|----------|---------|---------|
+| **Quick** | Simple factual questions | 2–5 seconds |
+| **Full Crew** | Complex health assessments | 20–60 seconds |
+
+SSE event types: `start`, `progress`, `complete`, `error`, plus a `[DONE]` sentinel to signal end of stream.
+
+## Rate Limiting
+
+All API endpoints have per-user rate limits:
+
+| Endpoint group | Limit |
+|----------------|-------|
+| Chat session creation | 10 / minute |
+| Full message (`/message`) | 20 / minute |
+| Quick message (`/quick`) | 30 / minute |
+| Streaming (`/stream`) | 10 / minute |
+| Feedback (`/feedback`) | 20 / minute |
+| Session list / history | 30 / minute |
+
+## Docker
+
+A `docker-compose.yml` is provided to run the full stack locally with three services: **MongoDB**, the **FastAPI backend**, and **Nginx** (serves the compiled frontend and reverse-proxies `/api` to the backend).
+
+```bash
+# Build all images and start services
+docker-compose up --build
+```
+
+The app will be available at `http://localhost` (port 80). Nginx handles routing:
+- Static frontend files served directly
+- `/api/*` requests proxied to the FastAPI backend
+
+## Deployment
+
+### Production Architecture
+
+```
+Browser → Firebase Hosting (static SPA) → Render Web Service (FastAPI)
+       or
+Browser → Netlify (static SPA + /api proxy) → Render Web Service (FastAPI)
+```
+
+- **Frontend:** Firebase Hosting — `https://healthbridge-ai-e96f5.firebaseapp.com` / `https://healthbridge-ai-e96f5.web.app`
+- **Frontend (alt):** Netlify — `https://healthbridge-ai.netlify.app`
+- **Backend:** Render Web Service — `https://health-bridge-x2ev.onrender.com`
+
+> **Note:** Render's free tier spins down after inactivity. Expect a ~50-second cold-start delay on the first request after a period of no traffic.
+
+### Key Production Environment Variables
+
+```env
+# Backend — CORS must include the production frontend domain(s)
+CORS_ORIGINS=https://healthbridge-ai-e96f5.firebaseapp.com,https://healthbridge-ai-e96f5.web.app,https://healthbridge-ai.netlify.app
+
+# Set production mode
+ENV=production
+DEBUG=false
+```
+
+## Authentication
+
+The app uses **Firebase Authentication** with two sign-in methods:
+
+- **Google OAuth** (popup-based)
+- **Email / password** registration and login
+
+After sign-in, the Firebase ID token is sent as a `Bearer` token in the `Authorization` header of every API request. The backend validates the token using Firebase Admin SDK.
+
+## Theming & UI
+
+The frontend supports:
+
+- **Dark / light mode** toggle (`ThemeToggle` component)
+- **Accent color system** — orange and purple themes
+- Theme state is managed via `ThemeContext` provider
+
+## Onboarding Flow
+
+First-time users complete a multi-step onboarding wizard (`OnboardingPage.jsx`):
+
+1. **Intro / Welcome**
+2. **Demographics** — age, biological sex
+3. **Family History** — hereditary conditions
+4. **Lifestyle** — smoking, alcohol consumption
+5. **Activity Level** — exercise habits
+
+## Pre-commit Hooks & Security
+
+The repo uses pre-commit hooks for code quality and secret detection:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+- **`.pre-commit-config.yaml`** — code style and lint hooks
+- **`.secrets.baseline`** — `detect-secrets` baseline to prevent accidental secret commits
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/your-feature`
+3. Install pre-commit hooks: `pre-commit install`
+4. Make your changes and add tests where appropriate
+5. Run the test suite: `cd backend && python -m pytest tests/`
+6. Push your branch and open a pull request
+
+Please follow the existing code style and include tests for new functionality.
 
 ## License
 
