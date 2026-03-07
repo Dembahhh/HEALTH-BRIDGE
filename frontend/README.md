@@ -8,11 +8,11 @@ React frontend for the Health-bridge AI preventive health coach.
 frontend/
 ├── src/
 │   ├── components/      # UI Components
-│   │   ├── ChatWindow.jsx
-│   │   ├── MessageBubble.jsx
-│   │   ├── PlanCard.jsx
-│   │   ├── RiskSummary.jsx
+│   │   ├── ThemeToggle.jsx
+│   │   ├── ErrorBoundary.jsx
 │   │   └── LoadingIndicator.jsx
+│   ├── context/         # React context providers
+│   │   └── ThemeContext.jsx
 │   ├── features/        # Redux slices
 │   │   ├── auth/
 │   │   ├── chat/
@@ -20,11 +20,14 @@ frontend/
 │   │   └── plans/
 │   ├── pages/           # Route pages
 │   │   ├── HomePage.jsx
+│   │   ├── LoginPage.jsx
+│   │   ├── SignupPage.jsx
+│   │   ├── OnboardingPage.jsx
 │   │   ├── ChatPage.jsx
 │   │   └── DashboardPage.jsx
 │   ├── services/        # API clients
 │   │   ├── api.js
-│   │   └── websocket.js
+│   │   └── firebase.js
 │   ├── App.jsx
 │   ├── main.jsx
 │   └── index.css
@@ -48,8 +51,9 @@ npm run dev
 
 ## Tech Stack
 
-- **React 18** + **Vite** for fast development
+- **React 19** + **Vite** for fast development
 - **TailwindCSS** for styling
 - **Redux Toolkit** for state management
 - **Firebase Auth** for authentication
 - **Axios** for API calls
+- **Lucide React** for icons
