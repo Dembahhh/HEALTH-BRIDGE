@@ -5,6 +5,7 @@ MongoDB connection and initialization using Motor and Beanie.
 """
 
 import logging
+import certifi
 from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 
@@ -26,6 +27,7 @@ async def init_db() -> None:
         minPoolSize=5,
         serverSelectionTimeoutMS=5000,
         connectTimeoutMS=10000,
+        tlsCAFile=certifi.where(),
     )
 
     # Import models here to avoid circular imports
@@ -60,3 +62,4 @@ def get_database():
     if _client is None:
         raise RuntimeError("Database not initialized")
     return _client[settings.MONGODB_DB_NAME]
+

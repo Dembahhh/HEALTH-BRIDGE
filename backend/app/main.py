@@ -62,8 +62,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Firebase initialization failed: %s", e)
 
-    await init_db()
-    logger.info("Database connected")
+    try:
+        await init_db()
+        logger.info("Database connected")
+    except Exception as e:
+        logger.error(
+            "DATABASE UNAVAILABLE — Beanie not initialized. "
+            "Atlas likely blocking this IP. Fix: Atlas > Network Access > Add IP. "
+            "Error: %s", e
+        )
+
 
     # Pre-initialize the LLM extractor + semantic matcher at startup
     # so the first chat request isn't delayed by ~40s of model loading

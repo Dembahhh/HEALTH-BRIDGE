@@ -170,8 +170,12 @@ async def send_message(
     await _persist_message(request_body.session_id, "user", request_body.content)
 
     # Look up the session to get its type
+    # ORIGINAL:
+    # session = await ChatSession.find_one(
+    #     ChatSession.session_id == request_body.session_id
+    # )
     session = await ChatSession.find_one(
-        ChatSession.session_id == request_body.session_id
+        {"session_id": request_body.session_id}
     )
     session_type = session.session_type if session else "general"
 
@@ -276,7 +280,7 @@ async def send_streaming_message(
 
     # Look up session type
     session = await ChatSession.find_one(
-        ChatSession.session_id == session_id
+        {"session_id": session_id}
     )
     session_type = session.session_type if session else "general"
 
@@ -412,8 +416,12 @@ async def send_quick_message(
         )
 
         # Touch session timestamp
+        # ORIGINAL:
+        # session = await ChatSession.find_one(
+        #     ChatSession.session_id == request_body.session_id
+        # )
         session = await ChatSession.find_one(
-            ChatSession.session_id == request_body.session_id
+            {"session_id": request_body.session_id}
         )
         if session:
             session.update_timestamp()
@@ -453,7 +461,7 @@ async def get_session_messages(
 
     # Verify the session belongs to the current user
     session = await ChatSession.find_one(
-        ChatSession.session_id == session_id
+        {"session_id": session_id}
     )
     if session and session.user_id != uid:
         raise HTTPException(
@@ -461,8 +469,12 @@ async def get_session_messages(
             detail="You do not have access to this session",
         )
 
+    # ORIGINAL:
+    # messages = await ChatMessage.find(
+    #     ChatMessage.session_id == session_id
+    # ).sort("+created_at").to_list()
     messages = await ChatMessage.find(
-        ChatMessage.session_id == session_id
+        {"session_id": session_id}
     ).sort("+created_at").to_list()
 
     return {
@@ -488,8 +500,12 @@ async def get_sessions(
     """List all chat sessions for the current user."""
     uid = _uid(current_user)
 
+    # ORIGINAL:
+    # sessions = await ChatSession.find(
+    #     ChatSession.user_id == uid
+    # ).sort("-created_at").to_list()
     sessions = await ChatSession.find(
-        ChatSession.user_id == uid
+        {"user_id": uid}
     ).sort("-created_at").to_list()
 
     return {
@@ -590,8 +606,12 @@ async def send_auto_message(
 
     try:
         if use_full_pipeline:
+            # ORIGINAL:
+            # session = await ChatSession.find_one(
+            #     ChatSession.session_id == request_body.session_id
+            # )
             session = await ChatSession.find_one(
-                ChatSession.session_id == request_body.session_id
+                {"session_id": request_body.session_id}
             )
             session_type = session.session_type if session else "general"
 

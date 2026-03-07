@@ -36,7 +36,8 @@ const steps = [
 export default function OnboardingPage() {
     const dispatch = useDispatch();
     const navigate = useNavigate();
-    const { loading } = useSelector((state) => state.profile);
+    // ORIGINAL: const { loading } = useSelector((state) => state.profile);
+    const { updating: loading } = useSelector((state) => state.profile);
     const { user } = useSelector((state) => state.auth);
 
     const [currentStep, setCurrentStep] = useState(0);

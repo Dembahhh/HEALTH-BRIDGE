@@ -71,7 +71,8 @@ def _uid(current_user) -> str:
 
 async def _get_or_create_profile(uid: str) -> HealthProfile:
     """Fetch existing profile or create a blank one."""
-    profile = await HealthProfile.find_one(HealthProfile.user_id == uid)
+    # ORIGINAL: profile = await HealthProfile.find_one(HealthProfile.user_id == uid)
+    profile = await HealthProfile.find_one({"user_id": uid})
     if not profile:
         profile = HealthProfile(user_id=uid)
         await profile.insert()
@@ -86,7 +87,7 @@ async def _get_or_create_profile(uid: str) -> HealthProfile:
 async def get_profile(current_user: CurrentUser):
     """Get current user's health profile."""
     uid = _uid(current_user)
-    profile = await HealthProfile.find_one(HealthProfile.user_id == uid)
+    profile = await HealthProfile.find_one({"user_id": uid})
 
     if not profile:
         return ProfileResponse()
@@ -127,7 +128,7 @@ async def update_profile(
 async def get_constraints(current_user: CurrentUser):
     """Get user's SDOH constraints."""
     uid = _uid(current_user)
-    profile = await HealthProfile.find_one(HealthProfile.user_id == uid)
+    profile = await HealthProfile.find_one({"user_id": uid})
 
     if not profile or not profile.constraints:
         return ConstraintsModel()

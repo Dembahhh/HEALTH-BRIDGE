@@ -65,7 +65,8 @@ async def get_current_user(
     # Find or create user in MongoDB
     try:
         from app.models.user import User
-        user = await User.find_one(User.firebase_uid == uid)
+        # ORIGINAL: user = await User.find_one(User.firebase_uid == uid)
+        user = await User.find_one({"firebase_uid": uid})
 
         if not user:
             user = User(

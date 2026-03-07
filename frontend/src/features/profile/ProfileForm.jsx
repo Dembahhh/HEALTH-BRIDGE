@@ -5,7 +5,8 @@ import { Check } from 'lucide-react';
 
 export default function ProfileForm({ existingProfile, onSuccess }) {
     const dispatch = useDispatch();
-    const { loading } = useSelector((state) => state.profile);
+    // ORIGINAL: const { loading } = useSelector((state) => state.profile);
+    const { updating: loading } = useSelector((state) => state.profile);
 
     const [formData, setFormData] = useState({
         age_band: '18-29',

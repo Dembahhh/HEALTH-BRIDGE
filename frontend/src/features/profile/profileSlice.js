@@ -30,6 +30,8 @@ const profileSlice = createSlice({
     initialState: {
         data: null,
         loading: false,
+        // ORIGINAL: (did not have updating state)
+        updating: false,
         error: null,
         lastUpdated: null,
     },
@@ -50,17 +52,32 @@ const profileSlice = createSlice({
                 state.error = action.payload;
             })
             // Update
+            // ORIGINAL:
+            // .addCase(updateProfile.pending, (state) => {
+            //     state.loading = true;
+            // })
             .addCase(updateProfile.pending, (state) => {
-                state.loading = true;
+                state.updating = true;
             })
+            // ORIGINAL:
+            // .addCase(updateProfile.fulfilled, (state, action) => {
+            //     state.loading = false;
+            //     state.data = action.payload;
+            //     ...
+            // })
             .addCase(updateProfile.fulfilled, (state, action) => {
-                state.loading = false;
+                state.updating = false;
                 state.data = action.payload;
                 state.lastUpdated = Date.now();
                 state.error = null;
             })
+            // ORIGINAL:
+            // .addCase(updateProfile.rejected, (state, action) => {
+            //     state.loading = false;
+            //     state.error = action.payload;
+            // })
             .addCase(updateProfile.rejected, (state, action) => {
-                state.loading = false;
+                state.updating = false;
                 state.error = action.payload;
             });
     },

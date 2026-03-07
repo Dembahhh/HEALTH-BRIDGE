@@ -6,6 +6,7 @@ python-dotenv>=1.0.0
 # Database
 motor>=3.3.0
 beanie>=1.25.0
+certifi>=2024.0.0  # CA bundle for MongoDB Atlas TLS — keep updated
 
 # Vector DB & RAG
 chromadb>=0.4.22

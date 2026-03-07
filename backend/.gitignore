@@ -23,6 +23,7 @@ data/chroma/
 
 # Firebase credentials
 firebase-credentials.json
+firebase-credentials(backup).json
 
 # Logs
 *.log
