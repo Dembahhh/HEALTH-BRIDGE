@@ -91,4 +91,5 @@ data/chroma/
 .tmp/
 tmp/
 *.local
-nul
+nul.firebase/
+frontend/.firebase/
