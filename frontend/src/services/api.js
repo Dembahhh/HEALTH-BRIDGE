@@ -155,4 +155,20 @@ export const chatApi = {
     },
 };
 
+export const trackingApi = {
+    // Log a new BP, glucose, or medication entry
+    logTracking: (data) => api.post('/tracking/log', data),
+    
+    // Get history with optional filters (?log_type=bp&limit=10)
+    getHistory: (logType = null, limit = 50) => {
+        let url = '/tracking/history?';
+        if (logType) url += `log_type=${logType}&`;
+        if (limit) url += `limit=${limit}`;
+        return api.get(url);
+    },
+    
+    // Get 7-day dashboard trends
+    getTrendsSummary: () => api.get('/trends/summary'),
+};
+
 export default api;

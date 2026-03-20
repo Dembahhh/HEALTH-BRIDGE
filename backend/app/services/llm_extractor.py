@@ -59,61 +59,81 @@ class LLMExtractor:
         self._init_semantic_matcher()
     
     def _init_llm(self):
-        """Initialize LLM client with proper error handling."""
-        # Try Gemini
-        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        """Initialize LLM client with proper error handling and provider routing."""
+        provider = os.getenv("LLM_PROVIDER", "gemini").lower()
         
-        if api_key:
-            try:
-                from google import genai
+        # 1. GitHub Models
+        if provider == "github":
+            github_token = os.getenv("GITHUB_TOKEN")
+            if github_token:
+                try:
+                    from openai import OpenAI
+                    # GitHub Models uses OpenAI's SDK with a custom base URL
+                    self.llm_client = OpenAI(
+                        api_key=github_token,
+                        base_url=os.getenv("GITHUB_BASE_URL", "https://models.github.inference.ai.azure.com")
+                    )
+                    # Use a lightweight model for extraction
+                    self._extraction_model = os.getenv("LLM_MODEL", "gpt-4o-mini")
+                    
+                    # Test connection
+                    self.llm_client.chat.completions.create(
+                        model=self._extraction_model,
+                        messages=[{"role": "user", "content": "Say ok"}],
+                        max_tokens=5
+                    )
+                    self.llm_available = True
+                    self.llm_type = "openai" # Uses OpenAI format
+                    logger.info(f"LLM Extractor: Using GitHub Models ({self._extraction_model})")
+                    return
+                except Exception as e:
+                    logger.warning(f"GitHub Models init failed: {e}")
 
-                self._genai_client = genai.Client(api_key=api_key)
-
-                # Try different model names (lite first to save quota)
-                models_to_try = [
-                    "gemini-2.0-flash-lite",
-                    "gemini-2.0-flash",
-                    "gemini-1.5-flash",
-                ]
-
-                for model_name in models_to_try:
-                    try:
-                        response = self._genai_client.models.generate_content(
-                            model=model_name, contents="Say 'ok'"
-                        )
-                        if response.text:
-                            self.llm_available = True
-                            self.llm_type = "gemini"
-                            self._gemini_model = model_name
-                            logger.info(f"LLM Extractor: Using {model_name}")
-                            return
-                    except Exception:
-                        continue
-
-                logger.warning("All Gemini models failed")
-
-            except Exception as e:
-                logger.warning(f"Gemini init failed: {e}")
+        # 2. Gemini
+        if provider == "gemini" or not self.llm_available:
+            api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+            if api_key:
+                try:
+                    from google import genai
+                    self._genai_client = genai.Client(api_key=api_key)
+                    models_to_try = ["gemini-2.0-flash-lite", "gemini-2.0-flash", "gemini-1.5-flash"]
+                    for model_name in models_to_try:
+                        try:
+                            response = self._genai_client.models.generate_content(
+                                model=model_name, contents="Say 'ok'"
+                            )
+                            if response.text:
+                                self.llm_available = True
+                                self.llm_type = "gemini"
+                                self._gemini_model = model_name
+                                logger.info(f"LLM Extractor: Using {model_name}")
+                                return
+                        except Exception:
+                            continue
+                    logger.warning("All Gemini models failed")
+                except Exception as e:
+                    logger.warning(f"Gemini init failed: {e}")
         
-        # Try OpenAI — skip empty or placeholder keys
-        openai_key = os.getenv("OPENAI_API_KEY", "").strip()
-        _is_placeholder = not openai_key or openai_key.startswith("your_") or len(openai_key) < 10
-        if openai_key and not _is_placeholder:
-            try:
-                from openai import OpenAI
-                self.llm_client = OpenAI(api_key=openai_key)
-                # Test
-                response = self.llm_client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role": "user", "content": "Say ok"}],
-                    max_tokens=5
-                )
-                self.llm_available = True
-                self.llm_type = "openai"
-                logger.info("LLM Extractor: Using OpenAI")
-                return
-            except Exception as e:
-                logger.warning(f"OpenAI init failed: {e}")
+        # 3. Standard OpenAI
+        if provider == "openai" or not self.llm_available:
+            openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+            _is_placeholder = not openai_key or openai_key.startswith("your_") or len(openai_key) < 10
+            if openai_key and not _is_placeholder:
+                try:
+                    from openai import OpenAI
+                    self.llm_client = OpenAI(api_key=openai_key)
+                    self._extraction_model = os.getenv("LLM_MODEL", "gpt-3.5-turbo")
+                    response = self.llm_client.chat.completions.create(
+                        model=self._extraction_model,
+                        messages=[{"role": "user", "content": "Say ok"}],
+                        max_tokens=5
+                    )
+                    self.llm_available = True
+                    self.llm_type = "openai"
+                    logger.info(f"LLM Extractor: Using OpenAI ({self._extraction_model})")
+                    return
+                except Exception as e:
+                    logger.warning(f"OpenAI init failed: {e}")
         
         logger.info("LLM unavailable for extractor, using semantic + regex fallback")
     
@@ -262,7 +282,7 @@ class LLMExtractor:
                 result_text = response.text
             else:
                 response = self.llm_client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model=getattr(self, '_extraction_model', 'gpt-3.5-turbo'),
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},

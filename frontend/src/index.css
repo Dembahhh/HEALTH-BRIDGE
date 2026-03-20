@@ -37,6 +37,9 @@
     --color-text-dark: #080807;
     --color-text-light: #FFFFFF;
     --color-text-muted: #8A8A89;
+
+    /* Card Themes */
+    --color-card: #1a1a2e;
 }
 
 /* ========================================

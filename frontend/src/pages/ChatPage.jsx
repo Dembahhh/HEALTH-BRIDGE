@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import ThemeToggle from '../components/ThemeToggle';
 import { ArrowLeft, Send, Sparkles, RotateCcw, Loader2 } from 'lucide-react';
 import { chatApi } from '../services/api';
-import rehypeSanitize, { defaultSchema} from 'rehype-sanitize';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 
 // Define allowed elements whitelist (safe formatting only, no raw HTML)
 const MARKDOWN_SANITIZE_SCHEMA = {
@@ -344,9 +344,9 @@ export default function ChatPage() {
                                 {message.role === 'assistant' ? (
                                     <div className="text-sm leading-relaxed assistant-markdown">
                                         <ReactMarkdown
-                                          rehypePlugins={[[rehypeSanitize, MARKDOWN_SANITIZE_SCHEMA]]}
+                                            rehypePlugins={[[rehypeSanitize, MARKDOWN_SANITIZE_SCHEMA]]}
                                         >
-                                           {message.content}
+                                            {message.content}
                                         </ReactMarkdown>
                                     </div>
                                 ) : (

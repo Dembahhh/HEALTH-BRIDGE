@@ -5,7 +5,12 @@ import { logout } from '../features/auth/authSlice';
 import ProfileForm from '../features/profile/ProfileForm';
 import { Link, useNavigate } from 'react-router-dom';
 import ThemeToggle from '../components/ThemeToggle';
-import { MessageSquare, User, Activity, LogOut, ChevronRight } from 'lucide-react';
+import { MessageSquare, User, Activity, LogOut, ChevronRight, Droplets, Pill, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+
+// Phase 1 Tracking Imports
+import { trackingApi } from '../services/api';
+import TrendChart from '../components/analytics/TrendChart';
+import RiskBadge from '../components/cards/RiskBadge';
 
 export default function DashboardPage() {
   const dispatch = useDispatch();
@@ -14,9 +19,31 @@ export default function DashboardPage() {
   const [isEditing, setIsEditing] = useState(false);
   const navigate = useNavigate();
 
+  // Phase 1 Tracking State
+  const [trends, setTrends] = useState(null);
+
+  const fetchDashboardData = async () => {
+    try {
+      const res = await trackingApi.getTrendsSummary();
+      setTrends(res.data);
+    } catch (err) {
+      console.error("Failed to load dashboard data:", err);
+    }
+  };
+
   useEffect(() => {
     dispatch(fetchProfile());
-  }, [dispatch]);
+    if (user?.uid) {
+      fetchDashboardData();
+    }
+  }, [dispatch, user]);
+
+  // Format chart data for the TrendChart
+  const chartData = trends?.bp?.history?.map(log => ({
+    date: new Date(log.timestamp).toLocaleDateString([], { weekday: 'short' }),
+    systolic: log.systolic,
+    diastolic: log.diastolic
+  })).reverse() || [];
 
   useEffect(() => {
     if (!loading && user?.uid) {
@@ -102,25 +129,119 @@ export default function DashboardPage() {
             Welcome back{user?.displayName ? `, ${user.displayName.split(' ')[0]}` : ''}! 👋
           </h1>
           <p style={{ color: 'var(--text-secondary)' }}>
-            Here's an overview of your health journey
+            Here is your daily health summary
           </p>
         </div>
 
+        {/* --- PHASE 1 TRACKING DASHBOARD --- */}
+        <div className="mb-8 grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fadeIn" style={{ animationDelay: '0.05s' }}>
+
+          {/* Left Column: Trends Chart */}
+          <div className="lg:col-span-2 flex flex-col gap-6">
+            <div className="bg-card rounded-2xl p-6 border border-[rgba(255,255,255,0.08)] shadow-sm">
+                <div className="flex items-center justify-between mb-6">
+                    <div>
+                        <h3 className="text-lg font-bold text-white">Health Trends</h3>
+                        <p className="text-sm text-gray-400">Your last 7 blood pressure readings</p>
+                    </div>
+                    <div className="flex gap-4 text-xs font-medium">
+                        <div className="flex items-center gap-1.5">
+                            <div className="w-2.5 h-2.5 rounded-full bg-rose-500"></div>
+                            <span>Systolic</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <div className="w-2.5 h-2.5 rounded-full bg-blue-500"></div>
+                            <span>Diastolic</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div className="h-[240px] w-full">
+                    <TrendChart 
+                        data={chartData} 
+                        dataKey="systolic" 
+                        color="#ef4444" 
+                        secondaryDataKey="diastolic" 
+                        secondaryColor="#3b82f6" 
+                    />
+                </div>
+            </div>
+
+            {/* Heavy CTA Button */}
+            <Link 
+                to="/log" 
+                className="group relative flex w-full items-center justify-center overflow-hidden rounded-2xl bg-gray-900 px-8 py-5 text-xl font-bold text-white transition-all hover:bg-black hover:shadow-xl active:scale-[0.98]"
+            >
+                <div className="absolute inset-0 bg-gradient-to-r from-primary-600/20 to-accent-600/20 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                <span className="relative flex items-center gap-3">
+                    <Activity className="w-6 h-6 text-primary-400" />
+                    Log Your Today's Vitals
+                    <ChevronRight className="w-6 h-6 text-gray-400 group-hover:translate-x-1 transition-transform" />
+                </span>
+            </Link>
+          </div>
+
+          {/* Right Column: Mini Trend Summaries */}
+          <div className="flex flex-col gap-4">
+            <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>7-Day Average</h3>
+
+            <div className="rounded-xl border p-4 shadow-sm" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
+              <div className="mb-2 flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-sm font-medium text-rose-500">
+                  <Activity className="h-4 w-4" /> Avg BP
+                </span>
+                {trends?.bp?.trend === 'improving' ? <TrendingDown className="h-4 w-4 text-emerald-500" /> : trends?.bp?.trend === 'worsening' ? <TrendingUp className="h-4 w-4 text-red-500" /> : <Minus className="h-4 w-4 text-neutral-400" />}
+              </div>
+              <div className="flex items-end justify-between">
+                <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                    {trends?.bp?.avg_systolic ? `${Math.round(trends.bp.avg_systolic)}/${Math.round(trends.bp.avg_diastolic)}` : '--/--'}
+                </p>
+                {trends?.bp?.avg_systolic && (
+                    <RiskBadge systolic={trends.bp.avg_systolic} diastolic={trends.bp.avg_diastolic} />
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl border p-4 shadow-sm" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
+              <div className="mb-2 flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-sm font-medium text-blue-500">
+                  <Droplets className="h-4 w-4" /> Avg Sugar
+                </span>
+                {trends?.glucose?.trend === 'improving' ? <TrendingDown className="h-4 w-4 text-emerald-500" /> : trends?.glucose?.trend === 'worsening' ? <TrendingUp className="h-4 w-4 text-red-500" /> : <Minus className="h-4 w-4 text-neutral-400" />}
+              </div>
+              <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                {trends?.glucose?.avg_value_mmol ? `${trends.glucose.avg_value_mmol.toFixed(1)} mmol/L` : '--'}
+              </p>
+            </div>
+
+            <div className="rounded-xl border p-4 shadow-sm" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
+              <div className="mb-2 flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-sm font-medium text-emerald-500">
+                  <Pill className="h-4 w-4" /> Med Adherence
+                </span>
+              </div>
+              <p className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
+                {trends?.medications?.adherence_percentage !== null && trends?.medications?.adherence_percentage !== undefined ? `${Math.round(trends.medications.adherence_percentage)}%` : '--'}
+              </p>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-100">
+                <div className="h-full bg-emerald-500 rounded-full transition-all duration-1000" style={{ width: `${trends?.medications?.adherence_percentage || 0}%` }} />
+              </div>
+            </div>
+          </div>
+        </div>
+        {/* ---------------------------------- */}
+
         {/* Alert Banner */}
         {!profile && !loading && (
-          <div className="mb-8 p-4 rounded-xl animate-fadeIn"
-            style={{
-              background: 'rgba(var(--color-primary-rgb), 0.1)',
-              border: '1px solid rgba(var(--color-primary-rgb), 0.3)'
-            }}>
+          <div className="mb-8 p-4 bg-card border border-[rgba(255,255,255,0.08)] rounded-xl animate-fadeIn">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center"
+              <div className="w-10 h-10 rounded-full flex items-center justify-center p-2"
                 style={{ background: 'var(--color-primary)' }}>
-                <User className="w-5 h-5 text-white" />
+                <User className="w-6 h-6 text-white" />
               </div>
               <div>
-                <p className="font-medium" style={{ color: 'var(--color-primary)' }}>Complete Your Profile</p>
-                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Add your health information to get personalized insights</p>
+                <p className="font-medium text-white">Complete Your Profile</p>
+                <p className="text-sm text-gray-400">Add your health information to get personalized insights</p>
               </div>
             </div>
           </div>

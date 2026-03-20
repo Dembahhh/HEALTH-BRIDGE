@@ -17,7 +17,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.config.settings import settings
 from app.config.database import init_db, close_db, get_database
-from app.api.routes import chat, profile, plans
+from app.api.routes import chat, plans, profile, tracking, trends  # Phase 1: Tracking/Trends API
 from app.core.rate_limit import limiter
 
 # Configure logging so INFO messages from our app show in the terminal
@@ -114,10 +114,11 @@ def create_app() -> FastAPI:
         allow_headers=["Authorization", "Content-Type", "Accept"],
     )
 
-    # Include routers
-    app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
-    app.include_router(profile.router, prefix="/api/profile", tags=["Profile"])
-    app.include_router(plans.router, prefix="/api/plans", tags=["Plans"])
+    app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
+    app.include_router(plans.router, prefix="/api/plans", tags=["plans"])
+    app.include_router(profile.router, prefix="/api/profile", tags=["profile"])
+    app.include_router(tracking.router, prefix="/api/tracking", tags=["tracking"])  # Phase 1: Tracking API
+    app.include_router(trends.router, prefix="/api/trends", tags=["trends"])  # Phase 1: Trends API
 
     # Health check with MongoDB ping
     @app.get("/health", tags=["Health"])

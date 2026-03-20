@@ -1,16 +1,20 @@
-import { useEffect } from 'react';
+import { useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { initAuthListener } from './features/auth/authSlice';
 import HomePage from './pages/HomePage';
 import ChatPage from './pages/ChatPage';
-import DashboardPage from './pages/DashboardPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import OnboardingPage from './pages/OnboardingPage';
 import LoadingIndicator from './components/LoadingIndicator';
 
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const LogCheckinPage = lazy(() => import('./pages/LogCheckinPage'));
+
 // Protected Route Wrapper
+import BottomNav from './components/layout/BottomNav';
+
 const ProtectedRoute = ({ children }) => {
     const { isAuthenticated, loading } = useSelector((state) => state.auth);
     const location = useLocation();
@@ -23,7 +27,13 @@ const ProtectedRoute = ({ children }) => {
         return <Navigate to="/login" state={{ from: location }} replace />;
     }
 
-    return children;
+    return (
+        <>
+            {children}
+            {/* Show bottom navigation ONLY on protected pages, excluding onboarding  */}
+            {location.pathname !== '/onboarding' && <BottomNav />}
+        </>
+    );
 };
 
 // Redirect component to handle root path logic securely
@@ -72,7 +82,19 @@ function App() {
                     path="/dashboard"
                     element={
                         <ProtectedRoute>
-                            <DashboardPage />
+                            <Suspense fallback={<LoadingIndicator />}>
+                                <DashboardPage />
+                            </Suspense>
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/log"
+                    element={
+                        <ProtectedRoute>
+                            <Suspense fallback={<LoadingIndicator />}>
+                                <LogCheckinPage />
+                            </Suspense>
                         </ProtectedRoute>
                     }
                 />
