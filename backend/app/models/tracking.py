@@ -63,6 +63,7 @@ class TrackingLog(Document):
     """
 
     user_id: Indexed(str)  # type: ignore[valid-type]  # Firebase UID
+    patient_id: Indexed(str)  # Patient ID
 
     log_type: str  # "bp" | "glucose" | "medication"
 
@@ -92,5 +93,7 @@ class TrackingLog(Document):
         name = "tracking_logs"
         indexes = [
             [("user_id", 1), ("timestamp", -1)],
+            [("patient_id", 1), ("timestamp", -1)],
             [("user_id", 1), ("log_type", 1), ("timestamp", -1)],
+            [("patient_id", 1), ("log_type", 1), ("timestamp", -1)],
         ]
