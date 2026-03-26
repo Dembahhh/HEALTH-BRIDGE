@@ -65,6 +65,19 @@ export default function DashboardPage() {
   const handleLogout = () => {
     dispatch(logout());
   };
+  if (loading) {
+    return (
+      <div className="min-h-screen" style={{ background: 'var(--bg-primary)' }}>
+        <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8 space-y-6">
+          {/* Skeleton blocks */}
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="h-32 rounded-2xl animate-pulse"
+              style={{ background: 'var(--bg-elevated)' }} />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg-primary)' }}>
@@ -138,46 +151,50 @@ export default function DashboardPage() {
 
           {/* Left Column: Trends Chart */}
           <div className="lg:col-span-2 flex flex-col gap-6">
-            <div className="bg-card rounded-2xl p-6 border border-[rgba(255,255,255,0.08)] shadow-sm">
-                <div className="flex items-center justify-between mb-6">
-                    <div>
-                        <h3 className="text-lg font-bold text-white">Health Trends</h3>
-                        <p className="text-sm text-gray-400">Your last 7 blood pressure readings</p>
-                    </div>
-                    <div className="flex gap-4 text-xs font-medium">
-                        <div className="flex items-center gap-1.5">
-                            <div className="w-2.5 h-2.5 rounded-full bg-rose-500"></div>
-                            <span>Systolic</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                            <div className="w-2.5 h-2.5 rounded-full bg-blue-500"></div>
-                            <span>Diastolic</span>
-                        </div>
-                    </div>
+            <div className="rounded-2xl p-6 shadow-sm" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)' }}>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Health Trends</h3>
+                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Your last 7 blood pressure readings</p>
                 </div>
-                
-                <div className="h-[240px] w-full">
-                    <TrendChart 
-                        data={chartData} 
-                        dataKey="systolic" 
-                        color="#ef4444" 
-                        secondaryDataKey="diastolic" 
-                        secondaryColor="#3b82f6" 
-                    />
+                <div className="flex gap-4 text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-rose-500"></div>
+                    <span>Systolic</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-blue-500"></div>
+                    <span>Diastolic</span>
+                  </div>
                 </div>
+              </div>
+
+              <div className="h-[240px] w-full">
+                <TrendChart
+                  data={chartData}
+                  dataKey="systolic"
+                  color="#ef4444"
+                  secondaryDataKey="diastolic"
+                  secondaryColor="#3b82f6"
+                />
+              </div>
             </div>
 
             {/* Heavy CTA Button */}
-            <Link 
-                to="/log" 
-                className="group relative flex w-full items-center justify-center overflow-hidden rounded-2xl bg-gray-900 px-8 py-5 text-xl font-bold text-white transition-all hover:bg-black hover:shadow-xl active:scale-[0.98]"
+            <Link
+              to="/log"
+              className="group relative flex w-full items-center justify-center overflow-hidden rounded-2xl px-8 py-5 text-xl font-bold text-white transition-all hover:shadow-xl active:scale-[0.98]"
+              style={{
+                background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-accent) 100%)',
+                boxShadow: '0 4px 20px rgba(var(--color-primary-rgb), 0.25)'
+              }}
             >
-                <div className="absolute inset-0 bg-gradient-to-r from-primary-600/20 to-accent-600/20 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                <span className="relative flex items-center gap-3">
-                    <Activity className="w-6 h-6 text-primary-400" />
-                    Log Your Today's Vitals
-                    <ChevronRight className="w-6 h-6 text-gray-400 group-hover:translate-x-1 transition-transform" />
-                </span>
+              <div className="absolute inset-0 bg-gradient-to-r from-primary-600/20 to-accent-600/20 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+              <span className="relative flex items-center gap-3">
+                <Activity className="w-6 h-6 text-primary-400" />
+                Log Your Today's Vitals
+                <ChevronRight className="w-6 h-6 text-gray-400 group-hover:translate-x-1 transition-transform" />
+              </span>
             </Link>
           </div>
 
@@ -194,10 +211,10 @@ export default function DashboardPage() {
               </div>
               <div className="flex items-end justify-between">
                 <p className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                    {trends?.bp?.avg_systolic ? `${Math.round(trends.bp.avg_systolic)}/${Math.round(trends.bp.avg_diastolic)}` : '--/--'}
+                  {trends?.bp?.avg_systolic ? `${Math.round(trends.bp.avg_systolic)}/${Math.round(trends.bp.avg_diastolic)}` : '--/--'}
                 </p>
                 {trends?.bp?.avg_systolic && (
-                    <RiskBadge systolic={trends.bp.avg_systolic} diastolic={trends.bp.avg_diastolic} />
+                  <RiskBadge systolic={trends.bp.avg_systolic} diastolic={trends.bp.avg_diastolic} />
                 )}
               </div>
             </div>
@@ -223,7 +240,7 @@ export default function DashboardPage() {
               <p className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
                 {trends?.medications?.adherence_percentage !== null && trends?.medications?.adherence_percentage !== undefined ? `${Math.round(trends.medications.adherence_percentage)}%` : '--'}
               </p>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-100">
+              <div className="h-1.5 w-full overflow-hidden rounded-full" style={{ background: 'var(--bg-elevated)' }}>
                 <div className="h-full bg-emerald-500 rounded-full transition-all duration-1000" style={{ width: `${trends?.medications?.adherence_percentage || 0}%` }} />
               </div>
             </div>
@@ -233,15 +250,16 @@ export default function DashboardPage() {
 
         {/* Alert Banner */}
         {!profile && !loading && (
-          <div className="mb-8 p-4 bg-card border border-[rgba(255,255,255,0.08)] rounded-xl animate-fadeIn">
+          <div className="mb-8 p-4 rounded-xl animate-fadeIn"
+            style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)' }}>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full flex items-center justify-center p-2"
                 style={{ background: 'var(--color-primary)' }}>
                 <User className="w-6 h-6 text-white" />
               </div>
               <div>
-                <p className="font-medium text-white">Complete Your Profile</p>
-                <p className="text-sm text-gray-400">Add your health information to get personalized insights</p>
+                <p className="font-medium" style={{ color: 'var(--text-primary)' }}>Complete Your Profile</p>
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Add your health information to get personalized insights</p>
               </div>
             </div>
           </div>
