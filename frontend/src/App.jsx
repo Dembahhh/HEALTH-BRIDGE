@@ -11,6 +11,9 @@ import LoadingIndicator from './components/LoadingIndicator';
 
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const LogCheckinPage = lazy(() => import('./pages/LogCheckinPage'));
+const ScreeningPage = lazy(() => import('./pages/ScreeningPage'));
+const PatientViewPage = lazy(() => import('./pages/PatientViewPage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 
 // Protected Route Wrapper
 import BottomNav from './components/layout/BottomNav';
@@ -94,6 +97,36 @@ function App() {
                         <ProtectedRoute>
                             <Suspense fallback={<LoadingIndicator />}>
                                 <LogCheckinPage />
+                            </Suspense>
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/screening"
+                    element={
+                        <ProtectedRoute>
+                            <Suspense fallback={<LoadingIndicator />}>
+                                <ScreeningPage />
+                            </Suspense>
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/patients"
+                    element={
+                        <ProtectedRoute>
+                            <Suspense fallback={<LoadingIndicator />}>
+                                <PatientViewPage />
+                            </Suspense>
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/profile"
+                    element={
+                        <ProtectedRoute>
+                            <Suspense fallback={<LoadingIndicator />}>
+                                <ProfilePage />
                             </Suspense>
                         </ProtectedRoute>
                     }
