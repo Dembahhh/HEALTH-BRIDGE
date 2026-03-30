@@ -7,7 +7,7 @@ Each log entry stores raw readings, classifier results, and optional AI nudges.
 
 from datetime import datetime
 from typing import Optional, List
-
+from pymongo import IndexModel
 from beanie import Document, Indexed
 from pydantic import Field, BaseModel
 
@@ -63,7 +63,7 @@ class TrackingLog(Document):
     """
 
     user_id: Indexed(str) #type: ignore[valid-type]  # Firebase UID
-    patient_id: Optional(str) = None ## Patient ID — None for self-tracked logs
+    patient_id: Optional[str] = None ## Patient ID — None for self-tracked logs
 
     log_type: str  # "bp" | "glucose" | "medication"
 
@@ -92,8 +92,8 @@ class TrackingLog(Document):
     class Settings:
         name = "tracking_logs"
         indexes = [
-            [("user_id", 1), ("timestamp", -1)],
-            [("patient_id", 1), ("timestamp", -1)],
-            [("user_id", 1), ("log_type", 1), ("timestamp", -1)],
-            [("patient_id", 1), ("log_type", 1), ("timestamp", -1)],
+            IndexModel([("user_id", 1), ("timestamp", -1)]),
+            IndexModel([("patient_id", 1), ("timestamp", -1)], sparse=True),
+            IndexModel([("user_id", 1), ("log_type", 1), ("timestamp", -1)]),
+            IndexModel([("patient_id", 1), ("log_type", 1), ("timestamp", -1)], sparse=True),
         ]
