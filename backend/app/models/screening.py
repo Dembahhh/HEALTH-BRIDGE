@@ -241,9 +241,13 @@ class ScreeningSession(Document):
         default=None,
         description=(
             "AI-generated one-page clinical summary from the HealthBridge Summary "
-            "Agent.  Plain text or Markdown.  None until the agent has processed "
+            "Agent.  Plain text only.  None until the agent has processed "
             "the session."
         ),
+    )
+    habit_plan_raw: Optional[str] = Field(
+        default=None,
+        description="Raw habit plan output from the Habit Coach agent. JSON string or plain text.",
     )
     referrals: list[str] = Field(
         default_factory=list,

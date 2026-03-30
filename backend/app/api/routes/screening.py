@@ -197,8 +197,6 @@ async def submit_screening(
 
     # 6. Call screening summary generator service
     agent_output = await generate_screening_summary(screening_context)
-    
-    agent_summary_full = f"{agent_output.get('summary', '')}\n\n## Habit Plan\n{agent_output.get('habit_plan', '')}"
 
     # 7. Save ScreeningSession document
     session = ScreeningSession(
@@ -207,7 +205,8 @@ async def submit_screening(
         practitioner_role=request.practitioner_role,
         bp_readings=[bp_reading],
         glucose_reading=glucose_reading,
-        agent_summary=agent_summary_full,
+        agent_summary=agent_output.get("summary", ""),
+        habit_plan=agent_output.get("habit_plan", ""),
         referrals=agent_output.get("referrals", []),
         consent_given=True,
         consent_timestamp=datetime.now(timezone.utc),
