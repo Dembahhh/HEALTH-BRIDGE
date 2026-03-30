@@ -59,15 +59,15 @@ export default function ScreeningWizard({ apiBaseUrl = '' }) {
       if (dia < 30 || dia > 200) throw new Error("Diastolic must be between 30 and 200.");
 
       const payload = {
-        patient_id: screeningData.patient.id || screeningData.patient._id,
         log_type: 'bp',
-        value: `${sys}/${dia}`
+        systolic: sys,
+        diastolic: dia
       };
 
       const res = await api.post(`/tracking/log`, payload);
       const data = res.data;
 
-      updateData('bp', { ...screeningData.bp, classification: data.classification });
+      updateData('bp', { ...screeningData.bp, classification: data.bp_classification });
       handleNext();
     } catch (err) {
       setError(err.message);
@@ -91,17 +91,16 @@ export default function ScreeningWizard({ apiBaseUrl = '' }) {
       if (isNaN(val)) throw new Error("Please enter a valid glucose value.");
 
       const payload = {
-        patient_id: screeningData.patient.id || screeningData.patient._id,
         log_type: 'glucose',
-        value: Math.round(val).toString(),
-        test_type: screeningData.glucose.testType,
-        unit: screeningData.glucose.unit
+        glucose_value: val,
+        glucose_test_type: screeningData.glucose.testType,
+        glucose_unit: screeningData.glucose.unit
       };
 
       const res = await api.post(`/tracking/log`, payload);
       const data = res.data;
 
-      updateData('glucose', { ...screeningData.glucose, classification: data.classification });
+      updateData('glucose', { ...screeningData.glucose, classification: data.glucose_classification });
       handleNext();
     } catch (err) {
       setError(err.message);
