@@ -8,6 +8,7 @@ import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import OnboardingPage from './pages/OnboardingPage';
 import LoadingIndicator from './components/LoadingIndicator';
+import BottomNav from './components/layout/BottomNav';
 
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const LogCheckinPage = lazy(() => import('./pages/LogCheckinPage'));
@@ -16,7 +17,6 @@ const PatientViewPage = lazy(() => import('./pages/PatientViewPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 
 // Protected Route Wrapper
-import BottomNav from './components/layout/BottomNav';
 
 const ProtectedRoute = ({ children }) => {
     const { isAuthenticated, loading } = useSelector((state) => state.auth);
@@ -29,13 +29,16 @@ const ProtectedRoute = ({ children }) => {
     if (!isAuthenticated) {
         return <Navigate to="/login" state={{ from: location }} replace />;
     }
+    //don't show nav on onboarding  
+    const showNav = location.pathname !== '/onboarding';
 
     return (
-        <>
-            {children}
-            {/* Show bottom navigation ONLY on protected pages, excluding onboarding  */}
-            {location.pathname !== '/onboarding' && <BottomNav />}
-        </>
+        <div className="flex flex-col min-h-screen">
+            <main className={`flex-1 ${showNav ? 'pb-16' : ''}`}>
+                {children}
+            </main>
+            {showNav && <BottomNav />}
+        </div>
     );
 };
 
