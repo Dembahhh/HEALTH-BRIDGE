@@ -62,9 +62,14 @@ def _patient_to_dict(patient: Patient) -> dict[str, Any]:
 
     Returns:
         Dict representation with ``_id`` as a string.
+        Note:
+        Changed : mode="json" forces Pydantic v2 to convert ALL types to JSON-safe
+     primitives, including PydanticObjectId -> str, datetime -> ISO string
     """
-    data = patient.model_dump()
+    data = patient.model_dump(mode="json")
     data["_id"] = str(patient.id)
+    #remove internal 'id key Beanie adds to avoid duplication
+    data.pop("id", None)
     return data
 
 
@@ -219,18 +224,20 @@ async def get_patient_history(
     events: list[dict[str, Any]] = []
 
     for session in screening_docs:
-        data = session.model_dump()
+        data = session.model_dump(mode="json")
         data["_id"] = str(session.id)
+        data.pop("id", None)
         data["type"] = "screening"
         # Normalise timestamp key so both types share a common sort field
-        data.setdefault("timestamp", session.timestamp)
+        data.setdefault("timestamp", session.timestamp.isoformat() if session.timestamp else None)
         events.append(data)
 
     for log in tracking_docs:
-        data = log.model_dump()
+        data = log.model_dump(mode="json")
         data["_id"] = str(log.id)
+        data.pop("id", None)
         data["type"] = "tracking"
-        data.setdefault("timestamp", log.timestamp)
+        data.setdefault("timestamp", log.timestamp.isoformat() if log.timestamp else None)
         events.append(data)
 
     # Sort descending — most recent first

@@ -1,8 +1,3 @@
-# NOTE FOR DEVELOPERS:
-# Remember to register `Patient` in `init_beanie()` inside `app/config/database.py`.
-# Example:
-#   await init_beanie(database=db, document_models=[..., Patient])
-# Failure to do so will cause Beanie to silently ignore this collection at startup.
 
 """
 patient.py — Beanie ODM Document for patient records in HealthBridge.
@@ -35,7 +30,6 @@ from pymongo import ASCENDING, IndexModel, TEXT
 
 # ---------------------------------------------------------------------------
 # Type aliases
-# ---------------------------------------------------------------------------
 
 PatientSex = Literal["male", "female"]
 """Allowed biological-sex / gender values for a patient record."""

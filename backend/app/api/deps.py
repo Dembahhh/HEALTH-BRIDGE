@@ -68,13 +68,20 @@ async def get_current_user(
         # ORIGINAL: user = await User.find_one(User.firebase_uid == uid)
         user = await User.find_one({"firebase_uid": uid})
 
-        if not user:
-            user = User(
+        if not user and email:
+            user = await User.find_one({"email": email})
+
+            if user:
+                await user.set({"firebase_uid": uid})
+                logger.info("Linked Firebase_uid to existing user: email=%s", email)
+            else:
+                user = User(
                 email=email,
                 firebase_uid=uid,
                 display_name=decoded_token.get("name"),
             )
             await user.create()
+            logger.info("New user created: email=%s", email)
 
         return user if user else {"uid": uid, "email": email}
 

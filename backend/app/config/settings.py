@@ -67,7 +67,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # CORS — plain string to avoid pydantic-settings JSON parse issues
-    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000,http://localhost"
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000,http://localhost,https://healthbridge-ai-e96f5.web.app,https://healthbridge-ai-e96f5.firebaseapp.com"
 
     def get_cors_origins(self) -> List[str]:
         """Parse CORS_ORIGINS into a list. Accepts JSON array or comma-separated."""
