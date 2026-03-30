@@ -13,7 +13,7 @@ from app.api.deps import CurrentUser
 from app.models.tracking import TrackingLog, MedicationEntry, NudgeData
 from app.core.classifiers.bp import classify_bp
 from app.core.classifiers.glucose import classify_glucose
-from app.services.nudges import generate_tracking_nudge  # Phase 1: Nudges
+from app.services.nudges import generate_tracking_nudge  
 
 router = APIRouter()
 
@@ -96,6 +96,7 @@ async def log_tracking_entry(
     
     log_entry = TrackingLog(
         user_id=uid,
+        patient_id=uid,
         log_type=request.log_type,
         mood=request.mood,
         notes=request.notes,
@@ -161,8 +162,9 @@ async def log_tracking_entry(
     background_tasks.add_task(generate_tracking_nudge, str(log_entry.id), uid)
     
     # Format response
-    response_data = log_entry.model_dump()
+    response_data = log_entry.model_dump(mode="json")
     response_data["id"] = str(log_entry.id)
+    response_data.pop("_id", None)
     return TrackingLogResponse(**response_data)
 
 
@@ -187,8 +189,9 @@ async def get_tracking_history(
     # Format response mapping Beanie '_id' down to Pydantic 'id'
     results = []
     for log in logs:
-        data = log.model_dump()
+        data = log.model_dump(mode="json")
         data["id"] = str(log.id)
+        data.pop("_id", None)
         results.append(TrackingLogResponse(**data))
         
     return results
