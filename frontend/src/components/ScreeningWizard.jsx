@@ -24,12 +24,12 @@ export default function ScreeningWizard({ apiBaseUrl = '' }) {
 
   const handleNext = () => {
     setError(null);
-    setStep(s => s + 1);
+    setStep(s => Math.min(s + 1, 4));
   };
 
   const handleBack = () => {
     setError(null);
-    setStep(s => s - 1);
+    setStep(s => Math.max(s - 1, 1));
   };
 
   const resetWizard = () => {
