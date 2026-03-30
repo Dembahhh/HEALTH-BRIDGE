@@ -206,7 +206,7 @@ async def submit_screening(
         bp_readings=[bp_reading],
         glucose_reading=glucose_reading,
         agent_summary=agent_output.get("summary", ""),
-        habit_plan=agent_output.get("habit_plan", ""),
+        habit_plan_raw=agent_output.get("habit_plan", ""),
         referrals=agent_output.get("referrals", []),
         consent_given=True,
         consent_timestamp=datetime.now(timezone.utc),
