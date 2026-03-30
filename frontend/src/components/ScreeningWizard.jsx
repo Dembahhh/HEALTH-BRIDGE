@@ -1,7 +1,7 @@
 import api from '../services/api';
 import PatientSearch from './PatientSearch';
 import RiskBadge from './RiskBadge';
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 
 export default function ScreeningWizard({ apiBaseUrl = '' }) {
   const [step, setStep] = useState(1);
@@ -12,7 +12,6 @@ export default function ScreeningWizard({ apiBaseUrl = '' }) {
     bp: { systolic: '', diastolic: '', classification: null },
     glucose: { include: false, value: '', unit: 'mmol_l', testType: 'random', classification: null },
   });
-
   const [isClassifying, setIsClassifying] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionResult, setSubmissionResult] = useState(null);
@@ -45,29 +44,18 @@ export default function ScreeningWizard({ apiBaseUrl = '' }) {
     setError(null);
   };
 
-  // Step 2: Submit BP for classification via tracking log endpoint (which returns classification)
-  // Or just store it locally. Wait, the prompt said: "Submit BP Reading button -> calls POST /api/tracking/log with type 'bp' ... On success: immediately show RiskBadge".
   const handleBPSubmit = async () => {
+    if (screeningData.bp.classification) { handleNext(); return; }
     try {
       setIsClassifying(true);
       setError(null);
-
       const sys = parseInt(screeningData.bp.systolic, 10);
       const dia = parseInt(screeningData.bp.diastolic, 10);
       if (isNaN(sys) || isNaN(dia)) throw new Error("Please enter valid numbers for blood pressure.");
       if (sys < 60 || sys > 300) throw new Error("Systolic must be between 60 and 300.");
       if (dia < 30 || dia > 200) throw new Error("Diastolic must be between 30 and 200.");
-
-      const payload = {
-        log_type: 'bp',
-        systolic: sys,
-        diastolic: dia
-      };
-
-      const res = await api.post(`/tracking/log`, payload);
-      const data = res.data;
-
-      updateData('bp', { ...screeningData.bp, classification: data.bp_classification });
+      const res = await api.post(`/tracking/log`, { log_type: 'bp', systolic: sys, diastolic: dia });
+      updateData('bp', { ...screeningData.bp, classification: res.data.bp_classification });
       handleNext();
     } catch (err) {
       setError(err.message);
@@ -76,31 +64,21 @@ export default function ScreeningWizard({ apiBaseUrl = '' }) {
     }
   };
 
-  // Step 3: Submit Glucose (if included) for classification
   const handleGlucoseSubmit = async () => {
+    if (!screeningData.glucose.include) { handleNext(); return; }
+    if (screeningData.glucose.classification) { handleNext(); return; }
     try {
-      if (!screeningData.glucose.include) {
-        handleNext();
-        return;
-      }
-
       setIsClassifying(true);
       setError(null);
-
       const val = parseFloat(screeningData.glucose.value);
       if (isNaN(val)) throw new Error("Please enter a valid glucose value.");
-
-      const payload = {
+      const res = await api.post(`/tracking/log`, {
         log_type: 'glucose',
         glucose_value: val,
         glucose_test_type: screeningData.glucose.testType,
-        glucose_unit: screeningData.glucose.unit
-      };
-
-      const res = await api.post(`/tracking/log`, payload);
-      const data = res.data;
-
-      updateData('glucose', { ...screeningData.glucose, classification: data.glucose_classification });
+        glucose_unit: screeningData.glucose.unit,
+      });
+      updateData('glucose', { ...screeningData.glucose, classification: res.data.glucose_classification });
       handleNext();
     } catch (err) {
       setError(err.message);
@@ -109,30 +87,24 @@ export default function ScreeningWizard({ apiBaseUrl = '' }) {
     }
   };
 
-  // Step 4: Submit Full Screening
   const submitScreening = async () => {
     try {
       setIsSubmitting(true);
       setError(null);
-
-      // Assemble the screening payload
       const payload = {
         patient_id: screeningData.patient.id || screeningData.patient._id,
         bp_systolic: parseInt(screeningData.bp.systolic, 10),
         bp_diastolic: parseInt(screeningData.bp.diastolic, 10),
         practitioner_role: screeningData.practitionerRole,
         consent_given: screeningData.consentGiven,
-        notes: ""
+        notes: '',
       };
-
       if (screeningData.glucose.include) {
         payload.glucose_value = parseFloat(screeningData.glucose.value);
         payload.glucose_unit = screeningData.glucose.unit;
         payload.glucose_test_type = screeningData.glucose.testType;
       }
-
       const res = await api.post(`/screening/submit`, payload);
-
       setSubmissionResult(res.data);
     } catch (err) {
       setError(err.response?.data?.detail || err.message || 'Error running the Agent pipeline.');
@@ -141,51 +113,81 @@ export default function ScreeningWizard({ apiBaseUrl = '' }) {
     }
   };
 
-  // Run initial submit when arriving at Step 4
   React.useEffect(() => {
     if (step === 4 && !submissionResult && !isSubmitting && !error) {
       submitScreening();
     }
   }, [step]);
 
+  // ── Parse agent_summary into summary text + structured habit plan ──
+  const parseAgentSummary = (raw) => {
+    if (!raw) return { summaryLines: [], habitPlan: null, habitPlanRaw: '' };
+    const parts = raw.split('## Habit Plan');
+    const summaryLines = parts[0]
+      .split('\n')
+      .map(l => l.trim())
+    .filter(l => l && !/^[-=*_]{2,}$/.test(l));
+    const habitPlanRaw = parts[1]?.trim() || '';
+    let habitPlan = null;
+    try { habitPlan = JSON.parse(habitPlanRaw); } catch { /* not JSON */ }
+    return { summaryLines, habitPlan, habitPlanRaw };
+  };
 
   const renderStepIndicator = () => (
-    <div className="mb-6 flex justify-between items-center text-sm font-medium"
-      style={{ color: 'var(--muted)' }}>
+    <div
+      className="mb-6 flex justify-between items-center text-sm font-medium"
+      style={{ color: 'var(--muted)' }}
+    >
       <span>Step {step} of 4</span>
       <div className="flex space-x-1">
         {[1, 2, 3, 4].map(i => (
-          <div key={i} className={"h-2 w-8 rounded-full"} style={{ background: i <= step ? 'var(--color-primary)' : 'var(--bg-elevated)' }} />
+          <div
+            key={i}
+            className="h-2 w-8 rounded-full"
+            style={{ background: i <= step ? 'var(--color-primary)' : 'var(--bg-elevated)' }}
+          />
         ))}
       </div>
     </div>
   );
 
   return (
-    <div className="w-full max-w-2xl mx-auto p-6 rounded-lg shadow-sm"
-      style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)' }}>
+    <div
+      className="w-full max-w-2xl mx-auto p-6 rounded-lg shadow-sm"
+      style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)' }}
+    >
       {renderStepIndicator()}
 
-      {/* ERROR DISPLAY */}
       {error && (
         <div className="mb-4 bg-red-50 p-3 rounded-md border border-red-200 text-sm text-red-700">
           {error}
         </div>
       )}
 
-      {/* STEP 1: Patient and Consent */}
+      {/* STEP 1 */}
       {step === 1 && (
         <div className="space-y-6 animate-fadeIn">
           <div>
-            <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Select Patient</h2>
+            <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Select Patient
+            </h2>
             {!screeningData.patient ? (
-              <PatientSearch onPatientSelected={(p) => updateData('patient', p)} apiBaseUrl={apiBaseUrl} />
+              <PatientSearch
+                onPatientSelected={(p) => updateData('patient', p)}
+                apiBaseUrl={apiBaseUrl}
+              />
             ) : (
-              <div className="p-4 rounded-md flex justify-between items-center"
-                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}>
+              <div
+                className="p-4 rounded-md flex justify-between items-center"
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}
+              >
                 <div>
-                  <p className="font-medium" style={{ color: 'var(--text-primary)' }}>{screeningData.patient.name}</p>
-                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{screeningData.patient.phone || 'No phone'} | Age: {screeningData.patient.age || 'Unknown'}</p>
+                  <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                    {screeningData.patient.name}
+                  </p>
+                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    {screeningData.patient.phone || 'No phone'} | Age: {screeningData.patient.age || 'Unknown'}
+                  </p>
                 </div>
                 <button
                   onClick={() => updateData('patient', null)}
@@ -226,13 +228,20 @@ export default function ScreeningWizard({ apiBaseUrl = '' }) {
         </div>
       )}
 
-      {/* STEP 2: Blood Pressure */}
+      {/* STEP 2 */}
       {step === 2 && (
         <div className="space-y-6 animate-fadeIn">
-          <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Measure Blood Pressure</h2>
+          <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
+            Measure Blood Pressure
+          </h2>
 
           <div>
-            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Practitioner Role</label>
+            <label
+              className="block text-sm font-medium mb-1"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              Practitioner Role
+            </label>
             <select
               value={screeningData.practitionerRole}
               onChange={(e) => updateData('practitionerRole', e.target.value)}
@@ -247,7 +256,12 @@ export default function ScreeningWizard({ apiBaseUrl = '' }) {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Systolic (mmHg)</label>
+              <label
+                className="block text-sm font-medium mb-1"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                Systolic (mmHg)
+              </label>
               <input
                 type="number"
                 placeholder="120"
@@ -257,7 +271,12 @@ export default function ScreeningWizard({ apiBaseUrl = '' }) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Diastolic (mmHg)</label>
+              <label
+                className="block text-sm font-medium mb-1"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                Diastolic (mmHg)
+              </label>
               <input
                 type="number"
                 placeholder="80"
@@ -269,15 +288,24 @@ export default function ScreeningWizard({ apiBaseUrl = '' }) {
           </div>
 
           {screeningData.bp.classification && (
-            <div className="p-4 rounded-md" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}>
+            <div
+              className="p-4 rounded-md"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}
+            >
               <div className="flex items-center space-x-3">
-                <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Classification:</span>
-                <RiskBadge category={screeningData.bp.classification.category} label={screeningData.bp.classification.label} />
+                <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                  Classification:
+                </span>
+                <RiskBadge
+                  category={screeningData.bp.classification.category}
+                  label={screeningData.bp.classification.label}
+                />
               </div>
-
               {['elevated', 'stage_1', 'stage_2', 'crisis'].includes(screeningData.bp.classification.category) && (
-                <div className="mt-3 p-3 rounded-md" style={{ background: 'rgba(234, 179, 8, 0.1)' }}>
-                  <p className="text-sm font-medium" style={{ color: 'rgb(161, 98, 7)' }}>Please take a second reading after 5 minutes</p>
+                <div className="mt-3 p-3 rounded-md" style={{ background: 'rgba(234,179,8,0.1)' }}>
+                  <p className="text-sm font-medium" style={{ color: 'rgb(161,98,7)' }}>
+                    Please take a second reading after 5 minutes
+                  </p>
                 </div>
               )}
             </div>
@@ -290,32 +318,48 @@ export default function ScreeningWizard({ apiBaseUrl = '' }) {
               disabled={!screeningData.bp.systolic || !screeningData.bp.diastolic || isClassifying}
               className="btn-primary px-6 py-2 disabled:opacity-50"
             >
-              {screeningData.bp.classification ? 'Confirm & Continue' : (isClassifying ? 'Checking...' : 'Check BP')}
+              {screeningData.bp.classification
+                ? 'Confirm & Continue'
+                : (isClassifying ? 'Checking...' : 'Check BP')
+              }
             </button>
           </div>
         </div>
       )}
 
-      {/* STEP 3: Blood Glucose */}
+      {/* STEP 3 */}
       {step === 3 && (
         <div className="space-y-6 animate-fadeIn">
-          <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Measure Blood Glucose (Optional)</h2>
+          <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
+            Measure Blood Glucose (Optional)
+          </h2>
 
           <label className="flex items-center space-x-3 cursor-pointer">
             <input
               type="checkbox"
               checked={screeningData.glucose.include}
               onChange={(e) => updateData('glucose', { ...screeningData.glucose, include: e.target.checked })}
-              className="h-4 w-4 rounded" style={{ accentColor: 'var(--color-primary)' }}
+              className="h-4 w-4 rounded"
+              style={{ accentColor: 'var(--color-primary)' }}
             />
-            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Include glucose reading?</span>
+            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+              Include glucose reading?
+            </span>
           </label>
 
           {screeningData.glucose.include && (
-            <div className="space-y-4 p-4 rounded-md" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}>
+            <div
+              className="space-y-4 p-4 rounded-md"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}
+            >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Value</label>
+                  <label
+                    className="block text-sm font-medium mb-1"
+                    style={{ color: 'var(--text-primary)' }}
+                  >
+                    Value
+                  </label>
                   <input
                     type="number"
                     step="0.1"
@@ -325,9 +369,13 @@ export default function ScreeningWizard({ apiBaseUrl = '' }) {
                     className="input w-full p-2"
                   />
                 </div>
-
                 <div>
-                  <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Unit</label>
+                  <label
+                    className="block text-sm font-medium mb-1"
+                    style={{ color: 'var(--text-primary)' }}
+                  >
+                    Unit
+                  </label>
                   <select
                     value={screeningData.glucose.unit}
                     onChange={(e) => updateData('glucose', { ...screeningData.glucose, unit: e.target.value })}
@@ -340,7 +388,12 @@ export default function ScreeningWizard({ apiBaseUrl = '' }) {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Test Type</label>
+                <label
+                  className="block text-sm font-medium mb-1"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  Test Type
+                </label>
                 <select
                   value={screeningData.glucose.testType}
                   onChange={(e) => updateData('glucose', { ...screeningData.glucose, testType: e.target.value })}
@@ -353,8 +406,13 @@ export default function ScreeningWizard({ apiBaseUrl = '' }) {
 
               {screeningData.glucose.classification && (
                 <div className="mt-4 flex items-center space-x-3">
-                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Classification:</span>
-                  <RiskBadge category={screeningData.glucose.classification.category} label={screeningData.glucose.classification.label} />
+                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                    Classification:
+                  </span>
+                  <RiskBadge
+                    category={screeningData.glucose.classification.category}
+                    label={screeningData.glucose.classification.label}
+                  />
                 </div>
               )}
             </div>
@@ -367,67 +425,180 @@ export default function ScreeningWizard({ apiBaseUrl = '' }) {
               disabled={screeningData.glucose.include && !screeningData.glucose.value}
               className="btn-primary px-6 py-2 disabled:opacity-50"
             >
-              {screeningData.glucose.include ? (screeningData.glucose.classification ? 'Confirm & Continue' : 'Check Glucose') : 'Skip Glucose'}
+              {screeningData.glucose.include
+                ? (screeningData.glucose.classification ? 'Confirm & Continue' : 'Check Glucose')
+                : 'Skip Glucose'
+              }
             </button>
           </div>
         </div>
       )}
 
-      {/* STEP 4: AI Summary / Submission Result */}
+      {/* STEP 4 */}
       {step === 4 && (
         <div className="space-y-6 animate-fadeIn min-h-[300px] flex flex-col justify-center">
           {isSubmitting ? (
             <div className="flex flex-col items-center justify-center space-y-4 py-8">
-              <svg className="animate-spin h-8 w-8" style={{ color: 'var(--text-primary)' }} fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              <svg
+                className="animate-spin h-8 w-8"
+                style={{ color: 'var(--text-primary)' }}
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                />
               </svg>
-              <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>Generating screening summary...</p>
+              <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>
+                Generating screening summary...
+              </p>
             </div>
-          ) : submissionResult ? (
-            <div className="space-y-6 rounded-md p-6" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}>
-              <div className="pb-4" style={{ borderBottom: '1px solid var(--border-color)' }}>
-                <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{screeningData.patient.name}</h3>
-                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Screening Date: {new Date().toLocaleDateString()}</p>
 
-                <div className="flex gap-2 mt-3">
-                  <RiskBadge category={screeningData.bp.classification?.category || 'normal'} label={`BP: ${screeningData.bp.systolic}/${screeningData.bp.diastolic} mmHg`} />
-                  {screeningData.glucose.include && (
-                    <RiskBadge category={screeningData.glucose.classification?.category || 'normal'} label={`Glucose: ${screeningData.glucose.value} ${screeningData.glucose.unit}`} />
-                  )}
+          ) : submissionResult ? (() => {
+            const { summaryLines, habitPlan, habitPlanRaw } = parseAgentSummary(submissionResult.agent_summary);
+            return (
+              <div
+                className="space-y-6 rounded-md p-6"
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}
+              >
+                {/* Header */}
+                <div className="pb-4" style={{ borderBottom: '1px solid var(--border-color)' }}>
+                  <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+                    {screeningData.patient.name}
+                  </h3>
+                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    Screening Date: {new Date().toLocaleDateString()}
+                  </p>
+                  <div className="flex gap-2 mt-3 flex-wrap">
+                    <RiskBadge
+                      category={screeningData.bp.classification?.category || 'normal'}
+                      label={`BP: ${screeningData.bp.systolic}/${screeningData.bp.diastolic} mmHg`}
+                    />
+                    {screeningData.glucose.include && (
+                      <RiskBadge
+                        category={screeningData.glucose.classification?.category || 'normal'}
+                        label={`Glucose: ${screeningData.glucose.value} ${screeningData.glucose.unit}`}
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {/* Clinical Summary */}
+                <div className="space-y-2 text-sm">
+                  <p className="font-semibold text-base" style={{ color: 'var(--text-primary)' }}>
+                    Clinical Summary
+                  </p>
+                  {summaryLines.map((line, i) => (
+                    <p key={i} style={{ color: 'var(--text-secondary)' }}>{line}</p>
+                  ))}
+                </div>
+
+                {/* Habit Plan — structured */}
+                {habitPlan ? (
+                  <div
+                    className="p-4 rounded-md"
+                    style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)' }}
+                  >
+                    <p className="font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
+                        Habit Plan ({habitPlan.duration_weeks}-week)
+                    </p>
+                    {habitPlan.focus_areas?.length > 0 && (
+                      <div className="flex gap-2 mb-3 flex-wrap">
+                        {habitPlan.focus_areas.map((area, i) => (
+                          <span
+                            key={i}
+                            className="text-xs px-2 py-1 rounded-full"
+                            style={{ background: 'var(--color-primary)', color: 'var(--text-primary)' }}
+                          >
+                            {area}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="space-y-3">
+                      {habitPlan.habits?.map((habit, i) => (
+                        <div
+                          key={i}
+                          className="p-3 rounded-md"
+                          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)' }}
+                        >
+                          <p className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>
+                            • {habit.action}
+                          </p>
+                          <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                              {habit.frequency} ·   {habit.trigger}
+                          </p>
+                          <p className="text-xs mt-1 italic" style={{ color: 'var(--text-secondary)' }}>
+                            {habit.rationale}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    {habitPlan.motivational_message && (
+                      <p className="text-sm mt-3 font-medium" style={{ color: 'var(--color-primary)' }}>
+                          {habitPlan.motivational_message}
+                      </p>
+                    )}
+                  </div>
+                ) : habitPlanRaw ? (
+                  /* Fallback — plain text habit plan if JSON parse failed */
+                  <div
+                    className="p-4 rounded-md"
+                    style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)' }}
+                  >
+                    <p className="font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+                      🏃 Habit Plan
+                    </p>
+                    <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>
+                      {habitPlanRaw}
+                    </p>
+                  </div>
+                ) : null}
+
+                {/* Referrals */}
+                {submissionResult.referrals?.length > 0 && (
+                  <div className="bg-red-50 border border-red-200 p-4 rounded-md">
+                    <p className="font-bold text-red-800 mb-2">Referrals and Escalations:</p>
+                    <ul className="list-disc pl-5 text-sm text-red-700 space-y-1">
+                      {submissionResult.referrals.map((ref, idx) => (
+                        <li key={idx}>{ref}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Reset */}
+                <div
+                  className="pt-4 flex justify-center mt-6"
+                  style={{ borderTop: '1px solid var(--border-color)' }}
+                >
+                  <button onClick={resetWizard} className="btn-secondary px-6 py-2">
+                    Start New Screening
+                  </button>
                 </div>
               </div>
-
-              {/* Splitting the Markdown generated by Agent summary */}
-              <div className="text-sm whitespace-pre-wrap leading-relaxed" style={{ color: 'var(--text-primary)' }}>
-                <p className="font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>Clinical Summary</p>
-                {submissionResult.agent_summary}
-              </div>
-
-              {submissionResult.referrals && submissionResult.referrals.length > 0 && (
-                <div className="bg-red-50 border border-red-200 p-4 rounded-md">
-                  <p className="font-bold text-red-800 mb-2">Referrals and Escalations:</p>
-                  <ul className="list-disc pl-5 text-sm text-red-700 space-y-1">
-                    {submissionResult.referrals.map((ref, idx) => (
-                      <li key={idx}>{ref}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              <div className="pt-4 flex justify-center mt-6" style={{ borderTop: '1px solid var(--border-color)' }}>
-                <button onClick={resetWizard} className="btn-secondary px-6 py-2">
-                  Start New Screening
-                </button>
-              </div>
-            </div>
-          ) : (
+            );
+          })() : (
             <div className="text-center py-8">
               {error ? (
                 <div className="mt-4 space-y-4">
                   <p className="text-red-600 mb-4">{error}</p>
-                  <button onClick={submitScreening} className="btn-primary px-4 py-2">Retry Submission</button>
-                  <button onClick={handleBack} className="btn-secondary ml-2 px-4 py-2">Back</button>
+                  <button onClick={submitScreening} className="btn-primary px-4 py-2">
+                    Retry Submission
+                  </button>
+                  <button onClick={handleBack} className="btn-secondary ml-2 px-4 py-2">
+                    Back
+                  </button>
                 </div>
               ) : (
                 <p style={{ color: 'var(--text-muted)' }}>Preparing to submit...</p>
