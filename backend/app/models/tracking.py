@@ -63,7 +63,7 @@ class TrackingLog(Document):
     """
 
     user_id: Indexed(str) #type: ignore[valid-type]  # Firebase UID
-    patient_id: Optional(str) =Field(default=None, index=True) ## Patient ID — None for self-tracked logs
+    patient_id: Optional(str) = None ## Patient ID — None for self-tracked logs
 
     log_type: str  # "bp" | "glucose" | "medication"
 
