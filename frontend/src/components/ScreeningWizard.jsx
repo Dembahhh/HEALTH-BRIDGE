@@ -119,20 +119,6 @@ export default function ScreeningWizard({ apiBaseUrl = '' }) {
     }
   }, [step]);
 
-  // ── Parse agent_summary into summary text + structured habit plan ──
-  const parseAgentSummary = (raw) => {
-    if (!raw) return { summaryLines: [], habitPlan: null, habitPlanRaw: '' };
-    const parts = raw.split('## Habit Plan');
-    const summaryLines = parts[0]
-      .split('\n')
-      .map(l => l.trim())
-    .filter(l => l && !/^[-=*_]{2,}$/.test(l));
-    const habitPlanRaw = parts[1]?.trim() || '';
-    let habitPlan = null;
-    try { habitPlan = JSON.parse(habitPlanRaw); } catch { /* not JSON */ }
-    return { summaryLines, habitPlan, habitPlanRaw };
-  };
-
   const renderStepIndicator = () => (
     <div
       className="mb-6 flex justify-between items-center text-sm font-medium"
@@ -465,7 +451,13 @@ export default function ScreeningWizard({ apiBaseUrl = '' }) {
             </div>
 
           ) : submissionResult ? (() => {
-            const { summaryLines, habitPlan, habitPlanRaw } = parseAgentSummary(submissionResult.agent_summary);
+            const summaryLines = (submissionResult.agent_summary || '')
+                 .split('\n')
+                  .map(l => l.trim())
+                  .filter(l => l && !/^[-=*_]{2,}$/.test(l));
+            let habitPlan = null;
+             try { habitPlan = JSON.parse(submissionResult.habit_plan_raw); } catch { /* not JSON */ }
+             const habitPlanRaw = submissionResult.habit_plan_raw || '';
             return (
               <div
                 className="space-y-6 rounded-md p-6"
@@ -557,7 +549,7 @@ export default function ScreeningWizard({ apiBaseUrl = '' }) {
                     style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)' }}
                   >
                     <p className="font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-                      🏃 Habit Plan
+                        Habit Plan
                     </p>
                     <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>
                       {habitPlanRaw}
