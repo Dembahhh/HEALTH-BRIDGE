@@ -67,7 +67,7 @@ class ScreeningSubmitRequest(BaseModel):
     )
 
 
-@router.post("/api/screening/submit", response_model=ScreeningSession)
+@router.post("/submit", response_model=ScreeningSession)
 async def submit_screening(
     request: ScreeningSubmitRequest,
     current_user: dict = Depends(get_current_user),
