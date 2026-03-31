@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from 'firebase/auth';
 import { auth, googleProvider } from '../../services/firebase';
 import api from '../../services/api';
+import { clearLitSession } from '../../services/litEncryption';
 
 // Async Thunks
 export const loginWithGoogle = createAsyncThunk(
@@ -142,6 +143,7 @@ const authSlice = createSlice({
                 state.error = action.payload;
             })
             .addCase(logout.fulfilled, (state) => {
+                clearLitSession(state.user?.uid);
                 state.user = null;
                 state.token = null;
                 state.isAuthenticated = false;

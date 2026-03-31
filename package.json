@@ -1,5 +1,10 @@
 {
   "dependencies": {
+    "@lit-protocol/auth-helpers": "^8.2.1",
+    "@lit-protocol/constants": "^9.0.1",
+    "@lit-protocol/encryption": "^7.4.0",
+    "@lit-protocol/lit-node-client": "^7.4.0",
+    "ethers": "^5.7.2",
     "rehype-sanitize": "^6.0.0"
   }
 }

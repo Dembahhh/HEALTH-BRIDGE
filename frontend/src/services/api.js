@@ -171,4 +171,40 @@ export const trackingApi = {
     getTrendsSummary: () => api.get('/trends/summary'),
 };
 
+//  Lit encryptor registry 
+// Allows api.js to encrypt outgoing data without importing React context.
+// LitContext.jsx calls registerLitEncryptor on mount.
+let _litEncryptor = null;
+export const registerLitEncryptor = (fn) => { _litEncryptor = fn; };
+export const unregisterLitEncryptor = () => { _litEncryptor = null; };
+export const maybeEncrypt = async (value) => {
+  if (!_litEncryptor || !value) return value;
+  return _litEncryptor(value);
+};
+
+// Screening API 
+export const screeningApi = {
+  // Submit a new screening session (plaintext — backend saves it first)
+  submitScreening: (data) =>
+    api.post('/screening/submit', data),
+
+  // Overwrite agent_summary + habit_plan_raw with encrypted blobs
+  sealScreeningSummary: async (sessionId, { agentSummary, habitPlanRaw }) =>
+    api.patch(`/screening/${sessionId}/seal`, {
+      agent_summary: await maybeEncrypt(agentSummary),
+      habit_plan_raw: await maybeEncrypt(habitPlanRaw),
+    }),
+
+  // Decrypt a session object's sensitive fields client-side
+  decryptScreeningSession: async (session, decryptFn) => ({
+    ...session,
+    agent_summary: session.agent_summary
+      ? await decryptFn(session.agent_summary)
+      : null,
+    habit_plan_raw: session.habit_plan_raw
+      ? await decryptFn(session.habit_plan_raw)
+      : null,
+  }),
+};
+
 export default api;

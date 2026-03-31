@@ -10,9 +10,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@lit-protocol/auth-helpers": "^6.11.5",
+    "@lit-protocol/constants": "^6.11.5",
+    "@lit-protocol/encryption": "^6.11.5",
+    "@lit-protocol/lit-auth-client": "^7.4.0",
+    "@lit-protocol/lit-node-client": "^6.11.5",
     "@reduxjs/toolkit": "^2.11.2",
     "@tailwindcss/vite": "^4.1.18",
     "axios": "^1.13.2",
+    "ethers": "^5.7.2",
     "firebase": "^12.8.0",
     "lucide-react": "^0.563.0",
     "react": "^19.2.0",

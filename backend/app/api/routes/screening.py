@@ -1,13 +1,18 @@
-"""
-screening.py — API router for practitioner screening submissions.
+"""screening.py — API router for practitioner screening submissions.
 
 This module handles the practitioner screening submission endpoint,
 which processes patient vitals, runs classifiers, and saves the session.
+It also provides a seal endpoint for overwriting AI-generated fields
+with Lit Protocol encrypted blobs from the frontend.
 """
 
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from __future__ import annotations
 
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+from bson import ObjectId
+from bson.errors import InvalidId
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
@@ -28,11 +33,13 @@ from app.services.screening import generate_screening_summary
 
 router = APIRouter()
 
+#Request / payload models 
 
 class ScreeningSubmitRequest(BaseModel):
     """Request payload for submitting a new screening session.
-    
-    Must contain either an existing patient ID or data to create a new patient.
+
+    Must contain either an existing patient ID or inline data to create
+    a new patient record.
     """
 
     patient_id: Optional[str] = Field(
@@ -67,46 +74,100 @@ class ScreeningSubmitRequest(BaseModel):
     )
 
 
+class SealPayload(BaseModel):
+    """Payload for overwriting sensitive fields with Lit-encrypted blobs.
+
+    Both fields are optional so the frontend can seal them independently.
+    Encrypted values are prefixed with ``__lit_enc__:``.
+    """
+
+    agent_summary: Optional[str] = Field(
+        default=None,
+        description="Encrypted agent summary blob (prefixed __lit_enc__:).",
+    )
+    habit_plan_raw: Optional[str] = Field(
+        default=None,
+        description="Encrypted habit plan blob (prefixed __lit_enc__:).",
+    )
+
+# Helpers 
+
+def _resolve_practitioner_uid(current_user: Any) -> str:
+    """Extract the practitioner's Firebase UID from the auth dependency.
+
+    Args:
+        current_user: Object or dict returned by ``get_current_user``.
+
+    Returns:
+        The practitioner's UID string.
+    """
+    return getattr(current_user, "firebase_uid", None) or current_user.get("uid")
+
+
+async def _get_patient_or_404(patient_id: str) -> Patient:
+    """Load a patient by ObjectId string or raise 404.
+
+    Args:
+        patient_id: MongoDB ObjectId as a string.
+
+    Returns:
+        The resolved Patient document.
+
+    Raises:
+        HTTPException: 404 if the patient does not exist or the ID is invalid.
+    """
+    try:
+        patient = await Patient.get(ObjectId(patient_id))
+    except InvalidId:
+        patient = None
+
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Patient with ID {patient_id} not found",
+        )
+    return patient
+
+# Routes
+
 @router.post("/submit", response_model=ScreeningSession)
 async def submit_screening(
     request: ScreeningSubmitRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: Any = Depends(get_current_user),
 ) -> ScreeningSession:
     """Submit a practitioner screening session.
 
-    Validates consent, handles new or existing patient, runs classifiers on
-    provided vitals, calls the placeholder agent to generate a summary, and
-    saves the session record.
-    
+    Validates consent, resolves or creates the patient, runs BP and optional
+    glucose classifiers, generates an AI summary, and persists the session.
+
     Args:
-        request: The valid payload containing vitals and patient info.
-        current_user: The authenticated practitioner.
-        
+        request: Validated payload containing vitals and patient info.
+        current_user: The authenticated practitioner (injected by FastAPI).
+
     Returns:
-        The saved ScreeningSession document.
-        
+        The saved ``ScreeningSession`` document.
+
     Raises:
-        HTTPException: If consent is not given, player info is missing, or
-            if glucose measurements are incomplete.
+        HTTPException 400: Consent not given, patient info missing, or
+            incomplete glucose measurements.
+        HTTPException 404: Referenced patient_id does not exist.
     """
-    # 1. Validate consent_given
+    # 1. Validate consent
     if not request.consent_given:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Patient consent is required",
         )
 
-    # Validate patient_id or new_patient presence
     if not request.patient_id and not request.new_patient:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Must provide either patient_id or new_patient data",
         )
 
-    # Retrieve practitioner ID correctly, based on deps.py implementation
-    practitioner_uid = getattr(current_user, "firebase_uid", current_user.get("uid"))
+    practitioner_uid: str = _resolve_practitioner_uid(current_user)
 
-    # 2. Get or Create Patient
+    # 2. Get or create patient
     if request.new_patient:
         patient = Patient(
             name=request.new_patient.name,
@@ -117,26 +178,16 @@ async def submit_screening(
             created_by=practitioner_uid,
         )
         await patient.create()
-        resolved_patient_id = str(patient.id)
     else:
-        # Cast to string safely, as validation ensures it's populated
-        from bson import ObjectId
-        from bson.errors import InvalidId
-        try:
-            patient = await Patient.get(ObjectId(request.patient_id))
-        except InvalidId:
-            patient = None
-            
-        if not patient:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Patient with ID {request.patient_id} not found",
-            )
-        resolved_patient_id = str(patient.id)
+        patient = await _get_patient_or_404(request.patient_id)
 
-    # 3. Process BP classification
+    resolved_patient_id: str = str(patient.id)
+
+    # 3. BP classification
     try:
-        bp_class_dict = classify_bp(request.bp_systolic, request.bp_diastolic)
+        bp_class_dict: dict[str, Any] = classify_bp(
+            request.bp_systolic, request.bp_diastolic
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -152,17 +203,19 @@ async def submit_screening(
         timestamp=datetime.now(timezone.utc),
     )
 
-    # 4. Process Glucose classification (if provided)
+    # 4. Glucose classification (optional)
     glucose_reading: Optional[GlucoseReading] = None
-    glucose_class_dict: Optional[Dict[str, Any]] = None
+    glucose_class_dict: Optional[dict[str, Any]] = None
 
     if request.glucose_value is not None:
         if not request.glucose_unit or not request.glucose_test_type:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="glucose_unit and glucose_test_type are required when glucose_value is provided",
+                detail=(
+                    "glucose_unit and glucose_test_type are required "
+                    "when glucose_value is provided"
+                ),
             )
-
         try:
             glucose_class_dict = classify_glucose(
                 value=request.glucose_value,
@@ -174,18 +227,19 @@ async def submit_screening(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid glucose reading: {e}",
             )
-            
+
         glucose_reading = GlucoseReading(
             value=request.glucose_value,
             unit=request.glucose_unit,
             test_type=request.glucose_test_type,
             classification=Classification(
-                label=glucose_class_dict["label"], color=glucose_class_dict["color"]
+                label=glucose_class_dict["label"],
+                color=glucose_class_dict["color"],
             ),
         )
 
-    # 5. Build screening context dict
-    screening_context: Dict[str, Any] = {
+    # 5. Build screening context
+    screening_context: dict[str, Any] = {
         "patient_name": patient.name,
         "patient_age": patient.age,
         "patient_sex": patient.sex,
@@ -195,10 +249,12 @@ async def submit_screening(
         "notes": request.notes,
     }
 
-    # 6. Call screening summary generator service
-    agent_output = await generate_screening_summary(screening_context)
+    # 6. Generate agent summary
+    agent_output: dict[str, Any] = await generate_screening_summary(
+        screening_context
+    )
 
-    # 7. Save ScreeningSession document
+    # 7. Save session
     session = ScreeningSession(
         patient_id=resolved_patient_id,
         practitioner_id=practitioner_uid,
@@ -211,8 +267,57 @@ async def submit_screening(
         consent_given=True,
         consent_timestamp=datetime.now(timezone.utc),
     )
-    
-    await session.create()
 
-    # 8. Return saved session
+    await session.create()
+    return session
+
+#Seal endpoint (Lit Protocol encryption) 
+
+@router.patch("/{session_id}/seal", response_model=ScreeningSession)
+async def seal_screening_session(
+    session_id: str,
+    payload: SealPayload,
+    current_user: Any = Depends(get_current_user),
+) -> ScreeningSession:
+    """Overwrite agent_summary and habit_plan_raw with Lit-encrypted blobs.
+
+    Called from the frontend after the ScreeningWizard receives the AI
+    output.  Only the practitioner who created the session may seal it.
+
+    Args:
+        session_id: MongoDB ObjectId string of the ScreeningSession.
+        payload: Encrypted blobs for agent_summary and/or habit_plan_raw.
+        current_user: The authenticated practitioner (injected by FastAPI).
+
+    Returns:
+        The updated ``ScreeningSession`` document.
+
+    Raises:
+        HTTPException 404: Session not found or invalid ObjectId.
+        HTTPException 403: Caller is not the session's practitioner.
+    """
+    try:
+        session = await ScreeningSession.get(ObjectId(session_id))
+    except InvalidId:
+        session = None
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Screening session {session_id} not found",
+        )
+
+    practitioner_uid: str = _resolve_practitioner_uid(current_user)
+    if session.practitioner_id != practitioner_uid:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorised to seal this session",
+        )
+
+    if payload.agent_summary is not None:
+        session.agent_summary = payload.agent_summary
+    if payload.habit_plan_raw is not None:
+        session.habit_plan_raw = payload.habit_plan_raw
+
+    await session.save()
     return session

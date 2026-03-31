@@ -9,6 +9,7 @@ import SignupPage from './pages/SignupPage';
 import OnboardingPage from './pages/OnboardingPage';
 import LoadingIndicator from './components/LoadingIndicator';
 import BottomNav from './components/layout/BottomNav';
+import { LitProvider } from './context/LitContext';
 
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const LogCheckinPage = lazy(() => import('./pages/LogCheckinPage'));
@@ -61,6 +62,7 @@ function App() {
     }
 
     return (
+      <LitProvider>
         <Router>
             <Routes>
                 <Route path="/" element={<RootRedirect />} />
@@ -136,6 +138,7 @@ function App() {
                 />
             </Routes>
         </Router>
+        </LitProvider>
     );
 }
 

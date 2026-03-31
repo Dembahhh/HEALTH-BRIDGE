@@ -93,3 +93,6 @@ tmp/
 *.local
 nul.firebase/
 frontend/.firebase/
+frontend/.firebase/hosting.ZGlzdA.cache
+frontend_diffs.txt
+nul

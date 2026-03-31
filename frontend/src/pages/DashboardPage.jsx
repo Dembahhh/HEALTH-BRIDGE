@@ -1,3 +1,4 @@
+import { useLitEncryption } from '../context/LitContext';
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchProfile } from '../features/profile/profileSlice';
@@ -15,7 +16,9 @@ import {
   Pill,
   TrendingUp,
   TrendingDown,
-  Minus
+  Minus,
+  ShieldCheck,
+  AlertCircle
 } from 'lucide-react';
 import { trackingApi } from '../services/api';
 import TrendChart from '../components/analytics/TrendChart';
@@ -48,6 +51,7 @@ export default function DashboardPage() {
   const dispatch = useDispatch();
   const { user } = useSelector((state) => state.auth);
   const { data: profile, loading } = useSelector((state) => state.profile);
+  const { litReady, litError } = useLitEncryption();
   const [isEditing, setIsEditing] = useState(false);
   const navigate = useNavigate();
 
@@ -149,6 +153,18 @@ export default function DashboardPage() {
             </div>
 
             <div className="flex items-center gap-4">
+              {litReady && (
+                <span className="flex items-center gap-1 text-xs text-emerald-500">
+                  <ShieldCheck className="w-4 h-4" />
+                  Encrypted
+                </span>
+              )}
+              {litError && (
+                <span className="flex items-center gap-1 text-xs text-amber-500">
+                  <AlertCircle className="w-4 h-4" />
+                  Encryption offline
+                </span>
+              )}
               <ThemeToggle />
               {user?.photoURL ? (
                 <img
