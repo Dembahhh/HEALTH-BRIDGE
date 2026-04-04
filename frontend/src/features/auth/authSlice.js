@@ -168,22 +168,26 @@ export const initAuthListener = (dispatch) => {
                     displayName: user.displayName,
                     photoURL: user.photoURL,
                 },
-                token
+                token: null, // Token will be refreshed in the interceptor for security
             }));
 
-            // ✅ Eject the previous interceptor before adding a new one
+            //  Eject the previous interceptor before adding a new one
             if (currentInterceptorId !== null) {
                 api.interceptors.request.eject(currentInterceptorId);
             }
 
-            // ✅ Store the new interceptor ID in the closure
-            currentInterceptorId = api.interceptors.request.use((config) => {
-                config.headers.Authorization = `Bearer ${token}`;
+            //  Store the new interceptor ID in the closure
+            currentInterceptorId = api.interceptors.request.use(async(config) => {
+                const currentUser = auth.currentUser;
+                if (currentUser)    {
+                    const freshToken = await currentUser.getIdToken();
+                    config.headers.Authorization = `Bearer ${freshToken}`;
+            }
                 return config;
             });
 
         } else {
-            // ✅ On logout, eject the interceptor so no token is sent
+            //  On logout, eject the interceptor so no token is sent
             if (currentInterceptorId !== null) {
                 api.interceptors.request.eject(currentInterceptorId);
                 currentInterceptorId = null;
