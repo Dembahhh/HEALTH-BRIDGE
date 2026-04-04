@@ -5,7 +5,8 @@ Main entry point for the FastAPI application.
 """
 
 from dotenv import load_dotenv
-load_dotenv()  # populate os.environ from .env before any other imports
+load_dotenv()  
+# populate os.environ from .env before any other imports
 
 import logging
 from contextlib import asynccontextmanager
@@ -97,8 +98,9 @@ def create_app() -> FastAPI:
         description="Preventive health coach for hypertension and diabetes risk in low-resource African settings",
         version="0.1.0",
         lifespan=lifespan,
-        docs_url="/docs",
-        redoc_url="/redoc",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
     )
 
     # Rate limiting
