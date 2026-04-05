@@ -258,7 +258,7 @@ VITE_FIREBASE_APP_ID=1:123456789:web:abc123
 ```bash
 cd backend
 source venv/bin/activate  # Windows: venv\Scripts\activate
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
 ```
 
 ### Backend (CLI Chat)
