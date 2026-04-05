@@ -1,4 +1,5 @@
 import React from 'react';
+import { getSeverityClass } from '../utils/clinicalColors';
 
 const colorMap = {
   normal: 'bg-green-100 text-green-800',
