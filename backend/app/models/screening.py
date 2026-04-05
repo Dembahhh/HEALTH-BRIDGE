@@ -1,8 +1,4 @@
-# NOTE FOR DEVELOPERS:
-# Remember to register `ScreeningSession` in `init_beanie()` inside `app/config/database.py`.
-# Example:
-#   await init_beanie(database=db, document_models=[..., ScreeningSession])
-# Failure to do so will cause Beanie to silently ignore this collection at startup.
+
 
 """
 screening.py — Beanie ODM Document for practitioner screening sessions.
@@ -30,19 +26,33 @@ GlucoseReading
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Literal, Optional
 
 from beanie import Document
 from pydantic import BaseModel, Field, model_validator
 from pymongo import DESCENDING, IndexModel
 
-# ---------------------------------------------------------------------------
 # Shared sub-models
-# ---------------------------------------------------------------------------
 
-PractitionerRole = Literal["doctor", "nurse", "clinical_officer", "chv"]
-"""Allowed practitioner roles within the HealthBridge platform."""
-
+class PractitionerRole(str, Enum):
+    """Practitioner roles within the HealthBridge platform.
+    str mixin stores readable strings in MongoDB, not integers.
+    """
+    DOCTOR = "doctor"
+    NURSE = "nurse"
+    CLINICAL_OFFICER = "clinical_officer"
+    CHV = "chv"
+class SessionStatus(str, Enum):
+    """Lifecycle status of a screening session.
+    
+    Allows the frontend to distinguish between a session where the
+    AI agent hasn't run yet vs one that completed or failed.
+    """
+    PENDING = "pending"         # vitals captured, agent not yet run
+    PROCESSING = "processing"   # agent currently running
+    COMPLETE = "complete"       # agent finished, summary available
+    FAILED = "failed"           # agent ran but errored
 GlucoseUnit = Literal["mmol_l", "mg_dl"]
 """Supported units for glucose measurements."""
 
@@ -59,20 +69,15 @@ class Classification(BaseModel):
     Attributes:
         label: Human-readable classification label (e.g. ``"Elevated"``,
             ``"Pre-diabetic"``).
-        color: Hex colour string used by the frontend to visually indicate
-            severity (e.g. ``"#FFA500"``).
+
 
     Example:
-        >>> c = Classification(label="Normal", color="#4CAF50")
+        >>> c = Classification(label="Normal")
         >>> c.label
         'Normal'
     """
 
     label: str = Field(..., description="Human-readable classification label.")
-    color: str = Field(
-        ...,
-        description="Hex colour for frontend severity rendering, e.g. '#FFA500'.",
-    )
 
 
 class BPReading(BaseModel):
@@ -91,7 +96,7 @@ class BPReading(BaseModel):
         >>> r = BPReading(
         ...     systolic=128,
         ...     diastolic=82,
-        ...     classification=Classification(label="Elevated", color="#FFA500"),
+        ...     classification=Classification(label="Elevated"),
         ...     timestamp=datetime.now(timezone.utc),
         ... )
         >>> r.systolic
@@ -145,9 +150,8 @@ class GlucoseReading(BaseModel):
     )
 
 
-# ---------------------------------------------------------------------------
+
 # Main document
-# ---------------------------------------------------------------------------
 
 
 class ScreeningSession(Document):
@@ -237,6 +241,14 @@ class ScreeningSession(Document):
             "Optional glucose measurement. None when not captured during the session."
         ),
     )
+    status: SessionStatus = Field(
+        default=SessionStatus.PENDING,
+        description=(
+            "Lifecycle status of the session. PENDING until the AI agent runs, "
+            "PROCESSING while running, COMPLETE when summary is available, "
+            "FAILED if the agent errored."
+        ),
+    )
     agent_summary: Optional[str] = Field(
         default=None,
         description=(
@@ -247,7 +259,7 @@ class ScreeningSession(Document):
     )
     habit_plan_raw: Optional[str] = Field(
         default=None,
-        description="Raw habit plan output from the Habit Coach agent. JSON string or plain text.",
+        description="Raw habit plan output from the Habit Coach agent in plain text.",
     )
     referrals: list[str] = Field(
         default_factory=list,
@@ -278,9 +290,9 @@ class ScreeningSession(Document):
         ),
     )
 
-    # ------------------------------------------------------------------
+
     # Validators
-    # ------------------------------------------------------------------
+    
 
     @model_validator(mode="after")
     def _consent_timestamp_required(self) -> "ScreeningSession":
@@ -300,9 +312,9 @@ class ScreeningSession(Document):
             )
         return self
 
-    # ------------------------------------------------------------------
+ 
     # Beanie settings
-    # ------------------------------------------------------------------
+    
 
     class Settings:
         """Beanie document settings for ``ScreeningSession``.

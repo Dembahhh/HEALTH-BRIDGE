@@ -4,7 +4,7 @@ User Model
 MongoDB document model for user accounts.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated, Optional
 from beanie import Document, Indexed, before_event, Replace, SaveChanges
@@ -24,8 +24,6 @@ class UserRole(str, Enum):
 
 class User(Document):
     """User document model."""
-
-#identity
     email: Annotated[EmailStr, Indexed(unique=True)]
     firebase_uid: Annotated[str, Indexed(unique=True)]
     display_name: Optional[str] = None
@@ -38,8 +36,8 @@ class User(Document):
     consent_given: bool = False
     consent_given_at: Optional[datetime] = None
     last_login: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Settings:
         name = "users"
@@ -50,4 +48,4 @@ class User(Document):
         Automatically update updated_at before every save.
         Beanie calls this — callers never need to remember.
         """
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
