@@ -1,0 +1,57 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+
+   //Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isPractitioner() {
+      return isAuthenticated() && request.auth.token.role == 'practitioner';
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.role == 'admin';
+    }
+    //Patient data
+    match /patients/{patientId} {
+      allow read: if isOwner(patientId) || isPractitioner();
+      allow create: if isAuthenticated();
+      allow update: if isOwner(patientId);
+      allow delete: if false; // Never delete patient records
+
+      match /readings/{readingId} {
+        allow read: if isOwner(patientId) || isPractitioner();
+        allow create: if isOwner(patientId);
+        allow update, delete: if false;
+      }
+
+      match /screenings/{screeningId} {
+        allow read: if isOwner(patientId) || isPractitioner();
+        allow create: if isAuthenticated();
+        allow update, delete: if false;
+      }
+    }
+
+    match /practitioners/{practitionerId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(practitionerId) || isAdmin();
+    }
+
+    match /guidelines/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Deny everything else by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
