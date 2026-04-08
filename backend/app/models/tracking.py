@@ -13,9 +13,9 @@ from pymongo import ASCENDING, DESCENDING, IndexModel
 
 from app.models.screening import Classification
 
-# --- Module-level type aliases ---
+# Module-level type aliases
 LogType         = Literal["bp", "glucose", "medication"]
-ActionType      = Literal["diet", "exercise", "medication", "monitoring", "referral"]
+ActionType      = Literal["diet", "exercise", "medication", "monitoring", "referral", "glucose", "bp"]
 GlucoseUnit     = Literal["mmol_l", "mg_dl"]
 GlucoseTestType = Literal["random", "fasting"]
 
@@ -34,37 +34,44 @@ class NudgeData(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc)
     )
 
-
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_action_type(cls, values):
+        allowed = {"diet", "exercise", "medication", "monitoring", "referral", "glucose", "bp"}
+        if isinstance(values, dict):
+            if values.get("action_type") not in allowed:
+                values["action_type"] = "monitoring"  # safe fallback
+        return values
 class TrackingLog(Document):
     """Health tracking log — one check-in entry per document."""
 
-    # --- Identity ---
+    #Identity
     user_id: Annotated[str, Indexed()]
     patient_id: Annotated[str, Indexed()]
     log_type: LogType
 
-    # --- BP fields ---
+    # BP fields
     systolic: Optional[int] = Field(default=None, ge=40, le=300)
     diastolic: Optional[int] = Field(default=None, ge=20, le=200)
     bp_classification: Optional[Classification] = None
 
-    # --- Glucose fields ---
+    # Glucose fields
     glucose_value: Optional[float] = Field(default=None, ge=0.0)
     glucose_unit: Optional[GlucoseUnit] = None
     glucose_test_type: Optional[GlucoseTestType] = None
     glucose_classification: Optional[Classification] = None
 
-    # --- Medication fields ---
+    # Medication fields
     medications: Optional[list[MedicationEntry]] = None
 
-    # --- Common fields ---
+    #Common fields
     mood: Optional[Literal["good", "okay", "bad"]] = None
     notes: Optional[str] = None
     timestamp: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
     )
 
-    # --- AI response ---
+    # AI response 
     nudge: Optional[NudgeData] = None
 
     @model_validator(mode="after")
