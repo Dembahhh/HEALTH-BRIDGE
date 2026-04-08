@@ -31,7 +31,7 @@ const ProtectedRoute = ({ children }) => {
   const location = useLocation();
 
   if (loading) {
-    return <LoadingIndicator />;
+    return <PageSkeleton />;
   }
 
   if (!isAuthenticated) {
@@ -50,7 +50,11 @@ const ProtectedRoute = ({ children }) => {
 
 // Redirect component to handle root path logic securely
 const RootRedirect = () => {
-  const { isAuthenticated } = useSelector((state) => state.auth);
+  const { isAuthenticated, loading } = useSelector((state) => state.auth);
+
+  if (loading) {
+    return <PageSkeleton />;
+  }
   return isAuthenticated ? (
     <Navigate to="/dashboard" replace />
   ) : (
@@ -67,7 +71,7 @@ function App() {
   }, [dispatch]);
 
   if (loading) {
-    return <LoadingIndicator />;
+    return <PageSkeleton />;
   }
 
   return (
